@@ -79,8 +79,9 @@ Shared models belong in `packages/models/src`. Define each model's Zod schema th
   to make OAuth redirects explicit. It defaults to the current browser origin
   when unset.
 - `GOOGLE_PLACES_API_KEY` is required for resolving Google Maps activity links.
-- `VITE_MAP_STYLE_URL` optionally overrides the MapLibre map style. When unset,
-  the frontend uses public OpenStreetMap raster tiles.
+- `VITE_GOOGLE_MAPS_API_KEY` is the browser-visible, HTTP-referrer-restricted
+  key used by the Google Maps JavaScript API. Keep `GOOGLE_PLACES_API_KEY`
+  backend-only.
 - `VITE_SUPABASE_PUBLISHABLE_KEY` is browser-visible configuration, not a
   service secret. Never expose a Supabase `service_role` key through `VITE_*`
   variables or frontend code.

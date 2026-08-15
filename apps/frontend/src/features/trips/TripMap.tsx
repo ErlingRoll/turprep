@@ -1,16 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
-import {
-  LngLatBounds,
-  Map as MapLibreMapConstructor,
-  Marker,
-  NavigationControl,
-  Popup,
-  type Map as MapLibreMap,
-  type Marker as MapLibreMarker,
-  type StyleSpecification,
-} from "maplibre-gl"
-import "maplibre-gl/dist/maplibre-gl.css"
+import { importLibrary, setOptions } from "@googlemaps/js-api-loader"
 import { formatDate } from "../../lib/date-format"
 import { MobileMenuButton } from "../../components/MobileMenuButton"
 
@@ -37,7 +27,6 @@ type TripMapProps = {
 }
 
 const markerDetailsAnimationDuration = 180
-const markerOverlapDistance = 28
 
 function prefersReducedMotion() {
   return (
@@ -45,92 +34,38 @@ function prefersReducedMotion() {
   )
 }
 
-function setMarkerVisualOffset(marker: MapLibreMarker, offset: [number, number]) {
-  marker.setOffset(offset)
-  const connector = marker.getElement().querySelector<HTMLElement>(".trip-map-marker-connector")
-
-  if (!connector) {
-    return
-  }
-
-  const distance = Math.hypot(offset[0], offset[1])
-  connector.style.width = `${distance}px`
-  connector.style.transform = `rotate(${Math.atan2(-offset[1], -offset[0])}rad)`
-  connector.hidden = distance === 0
-}
-
-function applyMarkerLayout(map: MapLibreMap, markers: Map<string, MapLibreMarker>) {
-  const entries = Array.from(markers.values()).map((marker) => ({
-    marker,
-    point: map.project(marker.getLngLat()),
-  }))
-  const groups: (typeof entries)[] = []
-  const remaining = [...entries]
-
-  while (remaining.length > 0) {
-    const group = [remaining.shift()!]
-    let groupChanged = true
-
-    while (groupChanged) {
-      groupChanged = false
-      for (let index = remaining.length - 1; index >= 0; index -= 1) {
-        const candidate = remaining[index]
-        const isOverlapping = group.some(
-          (entry) =>
-            Math.hypot(entry.point.x - candidate.point.x, entry.point.y - candidate.point.y) <=
-            markerOverlapDistance,
-        )
-
-        if (isOverlapping) {
-          group.push(candidate)
-          remaining.splice(index, 1)
-          groupChanged = true
-        }
-      }
-    }
-
-    groups.push(group)
-  }
-
-  groups.forEach((group) => {
-    if (group.length === 1) {
-      setMarkerVisualOffset(group[0].marker, [0, 0])
-      return
-    }
-
-    const radius = Math.min(42, Math.max(26, 18 + group.length * 3))
-    group.forEach((entry, index) => {
-      const angle = -Math.PI / 2 + (index * Math.PI * 2) / group.length
-      setMarkerVisualOffset(entry.marker, [Math.cos(angle) * radius, Math.sin(angle) * radius])
-    })
-  })
-}
-
-function bringMarkerToFront(markers: Map<string, MapLibreMarker>, marker: TripMapMarker) {
+function bringMarkerToFront(markers: Map<string, google.maps.Marker>, marker: TripMapMarker) {
   markers.forEach((currentMarker) => {
-    currentMarker.getElement().style.zIndex = ""
+    currentMarker.setZIndex(undefined)
   })
-  markers.get(`${marker.type}:${marker.id}`)?.getElement().style.setProperty("z-index", "10")
+  markers.get(`${marker.type}:${marker.id}`)?.setZIndex(google.maps.Marker.MAX_ZINDEX + 1)
 }
 
-function fitMapToMarkers(map: MapLibreMap, markers: TripMapMarker[]) {
+function fitMapToMarkers(map: google.maps.Map, markers: TripMapMarker[]) {
   if (markers.length === 0) {
     return
   }
 
   if (markers.length === 1) {
-    map.flyTo({
-      center: [markers[0].longitude, markers[0].latitude],
-      duration: prefersReducedMotion() ? 0 : 500,
-      zoom: 13,
-      essential: true,
-    })
+    const center = { lat: markers[0].latitude, lng: markers[0].longitude }
+    if (prefersReducedMotion()) {
+      map.setCenter(center)
+    } else {
+      map.panTo(center)
+    }
+    map.setZoom(13)
     return
   }
 
-  const bounds = new LngLatBounds()
-  markers.forEach((marker) => bounds.extend([marker.longitude, marker.latitude]))
-  map.fitBounds(bounds, { padding: 56, maxZoom: 13, duration: prefersReducedMotion() ? 0 : 500 })
+  const bounds = new google.maps.LatLngBounds()
+  markers.forEach((marker) => bounds.extend({ lat: marker.latitude, lng: marker.longitude }))
+  map.fitBounds(bounds, 56)
+  const listener = map.addListener("idle", () => {
+    if ((map.getZoom() ?? 0) > 13) {
+      map.setZoom(13)
+    }
+    listener.remove()
+  })
 }
 
 function getMarkerLabel(title: string) {
@@ -138,23 +73,31 @@ function getMarkerLabel(title: string) {
   return title.length > maxLength ? `${title.slice(0, maxLength - 1).trimEnd()}…` : title
 }
 
-const defaultMapStyle: StyleSpecification = {
-  version: 8,
-  sources: {
-    openStreetMap: {
-      type: "raster",
-      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-      tileSize: 256,
-      attribution: "© OpenStreetMap contributors",
-    },
-  },
-  layers: [
-    {
-      id: "openStreetMap",
-      type: "raster",
-      source: "openStreetMap",
-    },
-  ],
+function markerColor(type: TripMapMarker["type"]) {
+  return {
+    activity: "#2d7f8a",
+    meal: "#7654a8",
+    housing: "#bd6c3d",
+  }[type]
+}
+
+function markerIcon(marker: TripMapMarker): google.maps.Icon {
+  const label = getMarkerLabel(marker.title)
+  const width = Math.max(56, Math.min(190, label.length * 7 + 24))
+  const encodedLabel = label
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;")
+  const color = markerColor(marker.type)
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="42" viewBox="0 0 ${width} 42"><rect x="1" y="1" width="${width - 2}" height="29" rx="15" fill="${color}" stroke="#faf8f3" stroke-width="2"/><path d="M${width / 2 - 8} 29h16l-8 12z" fill="${color}" stroke="#faf8f3" stroke-width="2" stroke-linejoin="round"/><text x="${width / 2}" y="20" fill="#faf8f3" font-family="Arial,sans-serif" font-size="11" font-weight="700" text-anchor="middle">${encodedLabel}</text></svg>`
+
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: new google.maps.Size(width, 42),
+    anchor: new google.maps.Point(width / 2, 42),
+  }
 }
 
 export function TripMap({
@@ -179,9 +122,11 @@ export function TripMap({
   } | null>(null)
   const [isSavingLocation, setIsSavingLocation] = useState(false)
   const [locationEditError, setLocationEditError] = useState<string | null>(null)
+  const [mapLoadError, setMapLoadError] = useState<string | null>(null)
+  const [isMapReady, setIsMapReady] = useState(false)
   const containerRef = useRef<HTMLDivElement | null>(null)
-  const mapRef = useRef<MapLibreMap | null>(null)
-  const markerRefs = useRef<Map<string, MapLibreMarker>>(new Map())
+  const mapRef = useRef<google.maps.Map | null>(null)
+  const markerRefs = useRef<Map<string, google.maps.Marker>>(new Map())
   const markerDetailsCloseTimeoutRef = useRef<number | null>(null)
   const renderMarkerDetailsRef = useRef(renderMarkerDetails)
   const onMarkerClickRef = useRef(onMarkerClick)
@@ -199,32 +144,64 @@ export function TripMap({
       return
     }
 
-    const map = new MapLibreMapConstructor({
-      container: containerRef.current,
-      style: import.meta.env.VITE_MAP_STYLE_URL?.trim() || defaultMapStyle,
-      center: [10.7522, 59.9139],
-      zoom: 2,
-    })
-    map.addControl(new NavigationControl(), "top-right")
-    mapRef.current = map
+    let isCancelled = false
     const markerMap = markerRefs.current
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim()
+
+    if (!apiKey) {
+      setMapLoadError(t("tripMap.googleMapsUnavailable"))
+      return
+    }
+
+    setOptions({
+      key: apiKey,
+      language: "en",
+      v: "weekly",
+    })
+
+    void Promise.all([importLibrary("maps"), importLibrary("marker")])
+      .then(() => {
+        if (isCancelled || !containerRef.current) {
+          return
+        }
+
+        setMapLoadError(null)
+        const map = new google.maps.Map(containerRef.current, {
+          center: { lat: 59.9139, lng: 10.7522 },
+          fullscreenControl: false,
+          gestureHandling: "greedy",
+          mapTypeControl: false,
+          streetViewControl: false,
+          zoom: 2,
+          zoomControl: true,
+        })
+        mapRef.current = map
+        setIsMapReady(true)
+      })
+      .catch((error: unknown) => {
+        if (!isCancelled) {
+          setMapLoadError(t("tripMap.googleMapsUnavailable"))
+          console.error("Unable to load Google Maps.", error)
+        }
+      })
 
     return () => {
-      markerMap.forEach((marker) => marker.remove())
+      isCancelled = true
+      markerMap.forEach((marker) => marker.setMap(null))
       markerMap.clear()
-      map.remove()
       mapRef.current = null
+      setIsMapReady(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     const map = mapRef.current
 
-    if (!map) {
+    if (!map || !isMapReady) {
       return
     }
 
-    markerRefs.current.forEach((marker) => marker.remove())
+    markerRefs.current.forEach((marker) => marker.setMap(null))
     markerRefs.current.clear()
 
     if (markers.length === 0) {
@@ -232,73 +209,52 @@ export function TripMap({
     }
 
     markers.forEach((marker) => {
-      const element = document.createElement("button")
-      element.className = `trip-map-marker trip-map-marker-${marker.type}`
-      element.setAttribute("aria-label", `${marker.title}, ${formatDate(marker.date)}`)
-      element.title = marker.title
-      element.type = "button"
+      const mapMarker = new google.maps.Marker({
+        draggable: isLocationEditModeRef.current,
+        icon: markerIcon(marker),
+        map,
+        position: { lat: marker.latitude, lng: marker.longitude },
+        title: `${marker.title}, ${formatDate(marker.date)}`,
+      })
 
-      const label = document.createElement("span")
-      label.className = "trip-map-marker-label"
-      label.textContent = getMarkerLabel(marker.title)
-      const pointer = document.createElement("span")
-      pointer.className = "trip-map-marker-pointer"
-      const connector = document.createElement("span")
-      connector.className = "trip-map-marker-connector"
-      connector.hidden = true
-      element.append(connector, label, pointer)
+      mapMarker.addListener("click", () => {
+        bringMarkerToFront(markerRefs.current, marker)
 
-      if (renderMarkerDetailsRef.current || onMarkerClickRef.current) {
-        element.addEventListener("click", (event) => {
-          bringMarkerToFront(markerRefs.current, marker)
+        if (isLocationEditModeRef.current) {
+          return
+        }
 
-          if (isLocationEditModeRef.current) {
-            event.preventDefault()
-            event.stopImmediatePropagation()
-            return
-          }
+        if (window.innerWidth >= 1024) {
+          onMarkerClickRef.current?.(marker)
+          return
+        }
 
-          if (window.innerWidth >= 1024) {
-            if (onMarkerClickRef.current) {
-              event.preventDefault()
-              event.stopImmediatePropagation()
-              onMarkerClickRef.current(marker)
-            }
-            return
-          }
+        if (!renderMarkerDetailsRef.current) {
+          return
+        }
 
-          if (!renderMarkerDetailsRef.current) {
-            return
-          }
+        if (markerDetailsCloseTimeoutRef.current !== null) {
+          window.clearTimeout(markerDetailsCloseTimeoutRef.current)
+          markerDetailsCloseTimeoutRef.current = null
+        }
+        setIsMarkerDetailsClosing(false)
+        setSelectedMarker(marker)
+      })
 
-          event.preventDefault()
-          event.stopImmediatePropagation()
-          if (markerDetailsCloseTimeoutRef.current !== null) {
-            window.clearTimeout(markerDetailsCloseTimeoutRef.current)
-            markerDetailsCloseTimeoutRef.current = null
-          }
-          setIsMarkerDetailsClosing(false)
-          setSelectedMarker(marker)
-        })
-      }
-
-      const popup = new Popup({ offset: 18 }).setText(`${marker.title}\n${formatDate(marker.date)}`)
-
-      const mapMarker = new Marker({ anchor: "bottom", element })
-        .setLngLat([marker.longitude, marker.latitude])
-        .setPopup(popup)
-        .addTo(map)
-
-      mapMarker.on("dragend", () => {
+      mapMarker.addListener("dragend", () => {
         if (!isLocationEditModeRef.current) {
           return
         }
 
-        const position = mapMarker.getLngLat()
+        const position = mapMarker.getPosition()
+        if (!position) {
+          return
+        }
+
         setDraftLocation((currentDraft) => ({
           marker,
-          latitude: position.lat,
-          longitude: position.lng,
+          latitude: position.lat(),
+          longitude: position.lng(),
           originalLatitude:
             currentDraft?.marker.id === marker.id ? currentDraft.originalLatitude : marker.latitude,
           originalLongitude:
@@ -313,7 +269,7 @@ export function TripMap({
     })
 
     fitMapToMarkers(map, markers)
-  }, [markers])
+  }, [isMapReady, markers])
 
   useEffect(() => {
     markerRefs.current.forEach((marker) => marker.setDraggable(isLocationEditMode))
@@ -325,27 +281,6 @@ export function TripMap({
   }, [isLocationEditMode])
 
   useEffect(() => {
-    const map = mapRef.current
-
-    if (!map) {
-      return
-    }
-
-    const updateMarkerLayout = () => applyMarkerLayout(map, markerRefs.current)
-    const frame = requestAnimationFrame(updateMarkerLayout)
-    map.on("moveend", updateMarkerLayout)
-    map.on("zoomend", updateMarkerLayout)
-    map.on("resize", updateMarkerLayout)
-
-    return () => {
-      cancelAnimationFrame(frame)
-      map.off("moveend", updateMarkerLayout)
-      map.off("zoomend", updateMarkerLayout)
-      map.off("resize", updateMarkerLayout)
-    }
-  }, [markers])
-
-  useEffect(() => {
     setSelectedMarker((currentMarker) =>
       currentMarker && markers.some((marker) => marker.id === currentMarker.id)
         ? currentMarker
@@ -354,7 +289,7 @@ export function TripMap({
   }, [markers])
 
   useEffect(() => {
-    if (!focusMarker || !mapRef.current) {
+    if (!focusMarker || !mapRef.current || !isMapReady) {
       return
     }
 
@@ -365,12 +300,13 @@ export function TripMap({
         return
       }
 
-      mapRef.current.flyTo({
-        center: [focusMarker.longitude, focusMarker.latitude],
-        duration: prefersReducedMotion() ? 0 : 500,
-        essential: true,
-        zoom: 14,
-      })
+      const center = { lat: focusMarker.latitude, lng: focusMarker.longitude }
+      if (prefersReducedMotion()) {
+        mapRef.current.setCenter(center)
+      } else {
+        mapRef.current.panTo(center)
+      }
+      mapRef.current.setZoom(14)
       onFocusMarkerHandledRef.current?.()
     }
 
@@ -381,7 +317,7 @@ export function TripMap({
     }
 
     focusMap()
-  }, [focusMarker])
+  }, [focusMarker, isMapReady])
 
   useEffect(() => {
     if (!isMobileOpen || !mapRef.current) {
@@ -395,7 +331,7 @@ export function TripMap({
         return
       }
 
-      map.resize()
+      google.maps.event.trigger(map, "resize")
       fitMapToMarkers(map, markers)
     })
 
@@ -433,10 +369,10 @@ export function TripMap({
     if (draftLocation) {
       markerRefs.current
         .get(`${draftLocation.marker.type}:${draftLocation.marker.id}`)
-        ?.setLngLat([draftLocation.originalLongitude, draftLocation.originalLatitude])
-      if (mapRef.current) {
-        applyMarkerLayout(mapRef.current, markerRefs.current)
-      }
+        ?.setPosition({
+          lat: draftLocation.originalLatitude,
+          lng: draftLocation.originalLongitude,
+        })
     }
     setDraftLocation(null)
     setLocationEditError(null)
@@ -462,7 +398,10 @@ export function TripMap({
       const mapMarker = markerRefs.current.get(
         `${draftLocation.marker.type}:${draftLocation.marker.id}`,
       )
-      mapMarker?.setLngLat([draftLocation.originalLongitude, draftLocation.originalLatitude])
+      mapMarker?.setPosition({
+        lat: draftLocation.originalLatitude,
+        lng: draftLocation.originalLongitude,
+      })
       setLocationEditError(t("tripMap.locationSaveFailed"))
     } finally {
       setIsSavingLocation(false)
@@ -539,6 +478,11 @@ export function TripMap({
         </div>
         <div className="relative mt-0 min-h-0 flex-1 overflow-hidden rounded-xl lg:mt-3">
           <div className="h-full min-h-72 w-full" ref={containerRef} />
+          {mapLoadError && (
+            <div className="absolute inset-0 grid place-items-center bg-surface-muted/90 p-6 text-center text-sm text-error">
+              {mapLoadError}
+            </div>
+          )}
           {isLocationEditMode && (
             <div className="absolute left-3 top-14 z-10 max-w-64 rounded-lg bg-surface/95 px-3 py-2 text-xs text-on-surface shadow-card">
               {draftLocation ? t("tripMap.locationReadyToSave") : t("tripMap.locationEditHelp")}
