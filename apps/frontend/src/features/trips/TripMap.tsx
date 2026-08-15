@@ -12,6 +12,7 @@ import {
 } from "maplibre-gl"
 import "maplibre-gl/dist/maplibre-gl.css"
 import { formatDate } from "../../lib/date-format"
+import { MobileMenuButton } from "../../components/MobileMenuButton"
 
 export type TripMapMarker = {
   id: string
@@ -618,17 +619,17 @@ export function TripMap({
               )}
             </div>
           )}
-          <button
-            aria-label={t("tripMap.close")}
-            className="grid size-9 place-items-center rounded-lg text-xl text-on-surface hover:bg-surface-muted"
-            onClick={() => {
+          <MobileMenuButton
+            closeLabel={t("tripMap.close")}
+            isOpen
+            menuLabel={t("tripMap.close")}
+            onToggle={() => {
               setSelectedMarker(null)
               setIsMobileOpen(false)
             }}
-            type="button"
-          >
-            ×
-          </button>
+            openLabel={t("tripMap.close")}
+            showOnDesktop
+          />
         </div>
       </section>
       {selectedMarker && renderMarkerDetails && (
@@ -640,14 +641,14 @@ export function TripMap({
           >
             {renderMarkerDetails(selectedMarker)}
             <div className="flex justify-end pt-2">
-              <button
-                aria-label={t("tripMap.closeDetails")}
-                className="grid size-8 place-items-center rounded-lg bg-surface text-lg text-on-surface shadow-sm hover:bg-surface-muted"
-                onClick={closeMarkerDetails}
-                type="button"
-              >
-                ×
-              </button>
+              <MobileMenuButton
+                closeLabel={t("tripMap.closeDetails")}
+                isOpen
+                menuLabel={t("tripMap.closeDetails")}
+                onToggle={closeMarkerDetails}
+                openLabel={t("tripMap.closeDetails")}
+                showOnDesktop
+              />
             </div>
           </div>
         </div>

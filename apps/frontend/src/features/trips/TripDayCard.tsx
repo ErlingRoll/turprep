@@ -12,7 +12,6 @@ type TripDayCardProps = {
   dayTitle: string
   dayNotes: string
   isSavingDayDetails: boolean
-  scheduleSummary: string
   onToggleActivityForm: (date: string) => void
   onEditDayDetails: (date: string, title: string | null, notes: string | null) => void
   onDayTitleChange: (value: string) => void
@@ -34,7 +33,6 @@ export function TripDayCard({
   dayTitle,
   dayNotes,
   isSavingDayDetails,
-  scheduleSummary,
   onToggleActivityForm,
   onEditDayDetails,
   onDayTitleChange,

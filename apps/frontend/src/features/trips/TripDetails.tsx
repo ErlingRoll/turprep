@@ -656,14 +656,6 @@ export function TripDetails({
     ])
   }
 
-  function getDayScheduleSummary(day: TripDetail["days"][number]) {
-    const items = getDayItems(day)
-
-    return items.length === 0
-      ? t("tripDetails.noPlans")
-      : t("tripDetails.plansCount", { count: items.length })
-  }
-
   function getDayItemRecord(item: DayItem, meals = currentTrip.meals): DayItemRecord {
     const meal = meals.find((currentMeal) => currentMeal.id === item.id)
 
@@ -1581,7 +1573,6 @@ export function TripDetails({
                 onToggleActivityForm={toggleActivityForm}
                 openDay={openDay}
                 renderItemForm={renderDayItemForm}
-                scheduleSummary={getDayScheduleSummary(day)}
                 showDividerOnDesktop={
                   dayIndex > 0 &&
                   selectedDayDates.includes(day.date) &&

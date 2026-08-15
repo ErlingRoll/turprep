@@ -43,7 +43,7 @@ export function ItemDetailsDisplay({
   }
 
   return (
-    <div className="mt-2 grid gap-1 text-sm text-muted">
+    <div className="mt-2 grid min-w-0 gap-1 text-sm text-muted">
       {hasPrice && (
         <p>
           <span className="font-semibold text-on-surface">{t("itemDetails.price")}:</span>{" "}
@@ -51,7 +51,7 @@ export function ItemDetailsDisplay({
         </p>
       )}
       {hasWebsite && (
-        <p className="break-words">
+        <p className="min-w-0 max-w-full overflow-hidden break-all">
           <span className="font-semibold text-on-surface">{t("itemDetails.website")}:</span>{" "}
           {details.website}
         </p>

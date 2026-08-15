@@ -192,13 +192,13 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
             {t("travelMode.housing")}
           </p>
-          <p className="mt-1 font-semibold text-brand">{stay.name}</p>
+          <p className="mt-1 break-words font-semibold text-brand">{stay.name}</p>
           <p className="mt-1 text-sm text-muted">
             {formatDate(stay.checkIn ?? trip.startDate)} –{" "}
             {formatDate(stay.checkOut ?? trip.endDate)}
           </p>
           {stay.notes?.trim() && (
-            <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{stay.notes}</p>
+            <p className="mt-2 break-words whitespace-pre-wrap text-sm text-muted">{stay.notes}</p>
           )}
           <ItemDetailsDisplay
             details={stay}
@@ -247,12 +247,16 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
               {marker.type === "activity" ? t("tripDetails.activity") : t("travelMode.meal")}
             </p>
-            <p className="mt-1 font-semibold text-brand">
+            <p className="mt-1 break-words font-semibold text-brand">
               {getDayItemTitle(item, t("tripDetails.untitledItem"))}
             </p>
-            {item.placeAddress && <p className="mt-1 text-sm text-muted">{item.placeAddress}</p>}
+            {item.placeAddress && (
+              <p className="mt-1 break-words text-sm text-muted">{item.placeAddress}</p>
+            )}
             {item.notes?.trim() && (
-              <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{item.notes}</p>
+              <p className="mt-2 break-words whitespace-pre-wrap text-sm text-muted">
+                {item.notes}
+              </p>
             )}
             <ItemDetailsDisplay
               details={item}
@@ -277,7 +281,7 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
 
   return (
     <section className="mt-6">
-      <div className="rounded-2xl border border-border-soft bg-surface-soft p-5">
+      <div className="min-w-0 rounded-2xl border border-border-soft bg-surface-soft p-5">
         <p className="text-sm text-muted">{t("travelMode.subtitle")}</p>
         <div className="mt-4 flex items-center justify-between gap-3">
           <button
@@ -289,7 +293,7 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
           >
             ‹
           </button>
-          <div className="text-center">
+          <div className="min-w-0 text-center">
             <p className="text-sm font-semibold uppercase tracking-[0.16em] text-accent-text">
               {isToday
                 ? t("travelMode.today")
@@ -298,7 +302,7 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
             <h2 className="mt-1 flex flex-wrap items-baseline justify-center gap-x-2 text-xl font-semibold text-brand">
               <span>{formatDate(selectedDay.date)}</span>
               {selectedDay.title?.trim() && (
-                <span className="font-normal text-muted">{selectedDay.title}</span>
+                <span className="break-words font-normal text-muted">{selectedDay.title}</span>
               )}
             </h2>
           </div>
@@ -350,7 +354,7 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
             <div className="mt-4 grid gap-3">
               {housingForDay.map((stay) => (
                 <article
-                  className={`rounded-2xl border border-border bg-surface p-4 ${
+                  className={`min-w-0 overflow-hidden rounded-2xl border border-border bg-surface p-4 ${
                     highlightedMapItemKey === `housing:${stay.id}` ? "trip-map-card-focus" : ""
                   }`}
                   data-trip-item-key={`housing:${stay.id}`}
@@ -361,7 +365,7 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
                         {t("travelMode.housing")}
                       </p>
-                      <h3 className="mt-1 font-semibold text-brand">{stay.name}</h3>
+                      <h3 className="mt-1 break-words font-semibold text-brand">{stay.name}</h3>
                     </div>
                     {stay.latitude !== null && stay.longitude !== null && (
                       <MapLocateButton
@@ -371,7 +375,9 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
                     )}
                   </div>
                   {stay.notes?.trim() && (
-                    <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{stay.notes}</p>
+                    <p className="mt-2 break-words whitespace-pre-wrap text-sm text-muted">
+                      {stay.notes}
+                    </p>
                   )}
                   <ItemDetailsDisplay
                     details={stay}
@@ -382,7 +388,7 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
               ))}
               {mealsForDay.map((meal) => (
                 <article
-                  className={`rounded-2xl border border-border bg-surface p-4 ${
+                  className={`min-w-0 rounded-2xl border border-border bg-surface p-4 ${
                     highlightedMapItemKey === `meal:${meal.id}` ? "trip-map-card-focus" : ""
                   }`}
                   data-trip-item-key={`meal:${meal.id}`}
@@ -400,11 +406,11 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
                           {t("travelMode.meal")}
                         </p>
-                        <h3 className="mt-1 font-semibold text-brand">
+                        <h3 className="mt-1 break-words font-semibold text-brand">
                           {getDayItemTitle(meal, t("tripDetails.untitledItem"))}
                         </h3>
                         {meal.notes?.trim() && (
-                          <p className="mt-2 whitespace-pre-wrap text-sm text-muted">
+                          <p className="mt-2 break-words whitespace-pre-wrap text-sm text-muted">
                             {meal.notes}
                           </p>
                         )}
@@ -435,7 +441,7 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
             ) : (
               sortActivities(selectedDay.activities).map((activity) => (
                 <article
-                  className={`rounded-2xl border border-border-card bg-surface p-4 ${
+                  className={`min-w-0 rounded-2xl border border-border-card bg-surface p-4 ${
                     highlightedMapItemKey === `activity:${activity.id}` ? "trip-map-card-focus" : ""
                   }`}
                   data-trip-item-key={`activity:${activity.id}`}
@@ -450,14 +456,16 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
                         })}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h3 className="font-semibold text-brand">
+                        <h3 className="break-words font-semibold text-brand">
                           {getDayItemTitle(activity, t("tripDetails.untitledItem"))}
                         </h3>
                         {activity.placeAddress && (
-                          <p className="mt-1 text-sm text-muted">{activity.placeAddress}</p>
+                          <p className="mt-1 break-words text-sm text-muted">
+                            {activity.placeAddress}
+                          </p>
                         )}
                         {activity.notes?.trim() && (
-                          <p className="mt-2 whitespace-pre-wrap text-sm text-muted">
+                          <p className="mt-2 break-words whitespace-pre-wrap text-sm text-muted">
                             {activity.notes}
                           </p>
                         )}
