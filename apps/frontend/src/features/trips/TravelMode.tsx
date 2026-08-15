@@ -96,8 +96,6 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
   }
   const today = getTodayDate()
   const isToday = selectedDay.date === today
-  const isBeforeTrip = today < trip.startDate
-  const isAfterTrip = today > trip.endDate
   const housingForDay = useMemo(
     () =>
       trip.housingStays.filter(
@@ -282,7 +280,7 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
 
   return (
     <section className="mt-6 pb-24 lg:pb-0">
-      <div className="min-w-0 rounded-2xl border border-border-soft bg-surface-soft p-5">
+      <div className="hidden min-w-0 rounded-2xl border border-border-soft bg-surface-soft p-5 lg:block">
         <div className="mt-4 hidden items-center justify-between gap-3 lg:flex">
           <button
             aria-label={t("travelMode.previousDay")}
@@ -316,13 +314,6 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
             <DayChevron direction="next" />
           </button>
         </div>
-        {(isBeforeTrip || isAfterTrip) && (
-          <p className="mt-4 text-center text-sm text-muted">
-            {isBeforeTrip
-              ? t("travelMode.starts", { date: formatDate(trip.startDate) })
-              : t("travelMode.ended")}
-          </p>
-        )}
       </div>
 
       <div className="mt-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(22rem,32rem)] lg:items-start lg:gap-5">

@@ -140,12 +140,12 @@ export function TripBackupPage({
       ? allBackupActivities.filter((activity) => isDateSelected(activity.tripDate))
       : allBackupActivities,
   )
-  const backupMeals =
-    !areAllDaysSelected
-      ? allBackupMeals.filter((meal) => isDateSelected(meal.tripDate))
-      : allBackupMeals
-  const backupHousing =
-    !areAllDaysSelected ? allBackupHousing.filter(isHousingSelected) : allBackupHousing
+  const backupMeals = !areAllDaysSelected
+    ? allBackupMeals.filter((meal) => isDateSelected(meal.tripDate))
+    : allBackupMeals
+  const backupHousing = !areAllDaysSelected
+    ? allBackupHousing.filter(isHousingSelected)
+    : allBackupHousing
 
   async function handlePreferenceChange(
     itemType: TripItemType,
@@ -796,9 +796,8 @@ export function TripBackupPage({
   ]
 
   return (
-    <section className="mt-6 grid gap-5 pb-24 lg:pb-0">
+    <section className="mt-2 grid gap-5 pb-24 lg:pb-0">
       <div>
-        <p className="text-sm text-muted">{t("backup.subtitle")}</p>
         <div className="mt-4 lg:hidden">
           <label className="grid gap-1.5 text-sm font-medium text-muted">
             {t("backup.chooseType")}
