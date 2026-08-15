@@ -21,6 +21,8 @@ type TripDayCardProps = {
   onSaveDayDetails: (date: string) => void
   renderItemForm: (date: string) => ReactNode
   children: ReactNode
+  showDividerOnMobile: boolean
+  showDividerOnDesktop: boolean
 }
 
 export function TripDayCard({
@@ -41,20 +43,26 @@ export function TripDayCard({
   onSaveDayDetails,
   renderItemForm,
   children,
+  showDividerOnMobile,
+  showDividerOnDesktop,
 }: TripDayCardProps) {
   const { t } = useTranslation()
 
   return (
     <div
-      className={`rounded-2xl border border-border-card bg-page p-4 ${
+      className={`rounded-2xl bg-page p-4 ${
+        showDividerOnMobile ? "border-t border-border-divider" : ""
+      } ${showDividerOnDesktop ? "lg:border-t lg:border-border-divider" : "lg:border-t-0"} ${
         isSelected ? "" : "lg:hidden"
       }`}
     >
       <div className="flex items-start gap-4">
         <div className="min-w-0 flex-1">
-          <p className="text-lg font-semibold text-brand">{formatDate(day.date)}</p>
-          <p>{day.title?.trim() && <span className="font-normal">{day.title}</span>}</p>
-          <p className="mt-1 text-sm text-muted">{scheduleSummary}</p>
+          <p className="text-xl font-semibold text-brand">{formatDate(day.date)}</p>
+          <p className="text-lg font-bold text-on-surface">
+            {day.title?.trim() && <span className="font-normal">{day.title}</span>}
+          </p>
+          {/* <p className="mt-1 text-sm text-muted">{scheduleSummary}</p> */}
           {day.notes?.trim() && (
             <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{day.notes}</p>
           )}

@@ -10,7 +10,6 @@ type TripDayNavigatorProps = {
   onSelectAll: () => void
   onSelectDay: (date: string, shiftKey: boolean) => void
   onToggleDay: (date: string, shiftKey: boolean) => void
-  getDayScheduleSummary: (day: TripDetail["days"][number]) => string
   includeBackupHousing?: boolean
 }
 
@@ -22,7 +21,6 @@ export function TripDayNavigator({
   onSelectAll,
   onSelectDay,
   onToggleDay,
-  getDayScheduleSummary,
   includeBackupHousing = false,
 }: TripDayNavigatorProps) {
   const { t } = useTranslation()
@@ -115,17 +113,22 @@ export function TripDayNavigator({
                       )}
                     </span>
                     {day.title?.trim() && (
-                      <span className={`mt-0.5 block truncate text-xs font-bold`} title={day.title}>
+                      <span
+                        className={`mt-0.5 block truncate font-bold ${
+                          isActive ? "text-on-brand" : "text-on-surface"
+                        }`}
+                        title={day.title}
+                      >
                         {day.title}
                       </span>
                     )}
-                    <span
+                    {/* <span
                       className={`mt-0.5 block truncate text-xs ${
                         isActive ? "text-soft" : "text-faint"
                       }`}
                     >
                       {getDayScheduleSummary(day)}
-                    </span>
+                    </span> */}
                   </span>
                 </button>
               </div>

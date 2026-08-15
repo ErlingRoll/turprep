@@ -1489,7 +1489,6 @@ export function TripDetails({
       <div className="mt-4 lg:grid lg:grid-cols-[15rem_minmax(0,1fr)_minmax(22rem,32rem)] lg:items-start lg:gap-5">
         <TripDayNavigator
           days={trip.days}
-          getDayScheduleSummary={getDayScheduleSummary}
           housingStays={trip.housingStays}
           onSelectAll={onSelectAll}
           onSelectDay={onSelectDay}
@@ -1563,8 +1562,8 @@ export function TripDetails({
               userId={userId}
             />
           </div>
-          <div className={`grid gap-3 ${showMobileHousing ? "hidden lg:grid" : ""}`}>
-            {trip.days.map((day) => (
+          <div className={`grid ${showMobileHousing ? "hidden lg:grid" : ""}`}>
+            {trip.days.map((day, dayIndex) => (
               <TripDayCard
                 day={day}
                 dayNotes={dayNotes}
@@ -1583,6 +1582,14 @@ export function TripDetails({
                 openDay={openDay}
                 renderItemForm={renderDayItemForm}
                 scheduleSummary={getDayScheduleSummary(day)}
+                showDividerOnDesktop={
+                  dayIndex > 0 &&
+                  selectedDayDates.includes(day.date) &&
+                  trip.days
+                    .slice(0, dayIndex)
+                    .some((previousDay) => selectedDayDates.includes(previousDay.date))
+                }
+                showDividerOnMobile={dayIndex > 0}
               >
                 {renderDayHousing(day.date)}
                 <DayItemList

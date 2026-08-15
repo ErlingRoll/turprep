@@ -157,21 +157,6 @@ export function TripBackupPage({
   const backupHousing =
     isDesktop && !areAllDaysSelected ? allBackupHousing.filter(isHousingSelected) : allBackupHousing
 
-  function getReserveDayScheduleSummary(day: TripDetail["days"][number]) {
-    const count =
-      allBackupActivities.filter((activity) => activity.tripDate === day.date).length +
-      allBackupMeals.filter((meal) => meal.tripDate === day.date).length +
-      allBackupHousing.filter(
-        (stay) =>
-          stay.checkIn !== null &&
-          stay.checkOut !== null &&
-          stay.checkIn <= day.date &&
-          day.date < stay.checkOut,
-      ).length
-
-    return count === 0 ? t("tripDetails.noPlans") : t("tripDetails.plansCount", { count })
-  }
-
   async function handlePreferenceChange(
     itemType: TripItemType,
     itemId: string,
@@ -844,7 +829,6 @@ export function TripBackupPage({
       <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:items-start lg:gap-5">
         <TripDayNavigator
           days={trip.days}
-          getDayScheduleSummary={getReserveDayScheduleSummary}
           housingStays={trip.housingStays}
           includeBackupHousing
           onSelectAll={daySelection.onSelectAll}
