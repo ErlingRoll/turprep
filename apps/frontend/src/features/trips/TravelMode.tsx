@@ -6,6 +6,7 @@ import { MapLocateButton } from "../../components/MapLocateButton"
 import { formatActivityTime, getDayItemTitle, sortActivities } from "../../lib/activity-format"
 import { formatDate } from "../../lib/date-format"
 import { TripMap, type TripMapMarker } from "./TripMap"
+import { DayChevron, MobileDayPager } from "./MobileDayPager"
 
 type TravelModeProps = {
   trip: TripDetail
@@ -280,10 +281,9 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
   }
 
   return (
-    <section className="mt-6">
+    <section className="mt-6 pb-24 lg:pb-0">
       <div className="min-w-0 rounded-2xl border border-border-soft bg-surface-soft p-5">
-        <p className="text-sm text-muted">{t("travelMode.subtitle")}</p>
-        <div className="mt-4 flex items-center justify-between gap-3">
+        <div className="mt-4 hidden items-center justify-between gap-3 lg:flex">
           <button
             aria-label={t("travelMode.previousDay")}
             className="grid size-11 place-items-center rounded-xl text-2xl text-on-surface transition hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-30"
@@ -291,7 +291,7 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
             onClick={() => moveDay(-1)}
             type="button"
           >
-            ‹
+            <DayChevron direction="previous" />
           </button>
           <div className="min-w-0 text-center">
             <p className="text-sm font-semibold uppercase tracking-[0.16em] text-accent-text">
@@ -313,7 +313,7 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
             onClick={() => moveDay(1)}
             type="button"
           >
-            ›
+            <DayChevron direction="next" />
           </button>
         </div>
         {(isBeforeTrip || isAfterTrip) && (
@@ -326,178 +326,184 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
       </div>
 
       <div className="mt-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(22rem,32rem)] lg:items-start lg:gap-5">
-        <div className="min-w-0">
-          {(trip.notes?.trim() || selectedDay.notes?.trim()) && (
-            <div className="grid gap-3">
-              {trip.notes?.trim() && (
-                <div className="rounded-2xl border border-gold bg-warning-surface p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
-                    {t("travelMode.tripNote")}
-                  </p>
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-warning-body">{trip.notes}</p>
-                </div>
-              )}
-              {selectedDay.notes?.trim() && (
-                <div className="rounded-2xl border border-border-soft bg-surface-soft p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-success">
-                    {t("travelMode.dayNote")}
-                  </p>
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-success-body">
-                    {selectedDay.notes}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {(housingForDay.length > 0 || mealsForDay.length > 0) && (
-            <div className="mt-4 grid gap-3">
-              {housingForDay.map((stay) => (
-                <article
-                  className={`min-w-0 overflow-hidden rounded-2xl border border-border bg-surface p-4 ${
-                    highlightedMapItemKey === `housing:${stay.id}` ? "trip-map-card-focus" : ""
-                  }`}
-                  data-trip-item-key={`housing:${stay.id}`}
-                  key={stay.id}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
-                        {t("travelMode.housing")}
-                      </p>
-                      <h3 className="mt-1 break-words font-semibold text-brand">{stay.name}</h3>
-                    </div>
-                    {stay.latitude !== null && stay.longitude !== null && (
-                      <MapLocateButton
-                        label={t("tripMap.locate")}
-                        onClick={() => handleLocateItem("housing", stay.id)}
-                      />
-                    )}
-                  </div>
-                  {stay.notes?.trim() && (
-                    <p className="mt-2 break-words whitespace-pre-wrap text-sm text-muted">
-                      {stay.notes}
+        <MobileDayPager days={trip.days} onSelectDate={setSelectedDate} selectedDate={selectedDate}>
+          <div className="min-w-0">
+            {(trip.notes?.trim() || selectedDay.notes?.trim()) && (
+              <div className="grid gap-3">
+                {trip.notes?.trim() && (
+                  <div className="rounded-2xl border border-gold bg-warning-surface p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
+                      {t("travelMode.tripNote")}
                     </p>
-                  )}
-                  <ItemDetailsDisplay
-                    details={stay}
-                    showPrice={itemDetailVisibility.showPrice}
-                    showWebsite={itemDetailVisibility.showWebsite}
-                  />
-                </article>
-              ))}
-              {mealsForDay.map((meal) => (
-                <article
-                  className={`min-w-0 rounded-2xl border border-border bg-surface p-4 ${
-                    highlightedMapItemKey === `meal:${meal.id}` ? "trip-map-card-focus" : ""
-                  }`}
-                  data-trip-item-key={`meal:${meal.id}`}
-                  key={meal.id}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 flex-1 items-start gap-3">
-                      <div className="grid min-w-16 place-items-center rounded-xl bg-accent px-2 py-2 text-sm font-semibold text-on-accent">
-                        {formatActivityTime(meal, {
-                          allDay: t("tripDetails.allDay"),
-                          timeNotSet: t("tripDetails.timeNotSet"),
-                        })}
-                      </div>
+                    <p className="mt-2 whitespace-pre-wrap text-sm text-warning-body">
+                      {trip.notes}
+                    </p>
+                  </div>
+                )}
+                {selectedDay.notes?.trim() && (
+                  <div className="rounded-2xl border border-border-soft bg-surface-soft p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-success">
+                      {t("travelMode.dayNote")}
+                    </p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm text-success-body">
+                      {selectedDay.notes}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(housingForDay.length > 0 || mealsForDay.length > 0) && (
+              <div className="mt-4 grid gap-3">
+                {housingForDay.map((stay) => (
+                  <article
+                    className={`min-w-0 overflow-hidden rounded-2xl border border-border bg-surface p-4 ${
+                      highlightedMapItemKey === `housing:${stay.id}` ? "trip-map-card-focus" : ""
+                    }`}
+                    data-trip-item-key={`housing:${stay.id}`}
+                    key={stay.id}
+                  >
+                    <div className="flex items-start gap-3">
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
-                          {t("travelMode.meal")}
+                          {t("travelMode.housing")}
                         </p>
-                        <h3 className="mt-1 break-words font-semibold text-brand">
-                          {getDayItemTitle(meal, t("tripDetails.untitledItem"))}
-                        </h3>
-                        {meal.notes?.trim() && (
-                          <p className="mt-2 break-words whitespace-pre-wrap text-sm text-muted">
-                            {meal.notes}
-                          </p>
-                        )}
-                        <ItemDetailsDisplay
-                          details={meal}
-                          showPrice={itemDetailVisibility.showPrice}
-                          showWebsite={itemDetailVisibility.showWebsite}
+                        <h3 className="mt-1 break-words font-semibold text-brand">{stay.name}</h3>
+                      </div>
+                      {stay.latitude !== null && stay.longitude !== null && (
+                        <MapLocateButton
+                          label={t("tripMap.locate")}
+                          onClick={() => handleLocateItem("housing", stay.id)}
                         />
-                      </div>
+                      )}
                     </div>
-                    {meal.latitude !== null && meal.longitude !== null && (
-                      <MapLocateButton
-                        label={t("tripMap.locate")}
-                        onClick={() => handleLocateItem("meal", meal.id)}
-                      />
+                    {stay.notes?.trim() && (
+                      <p className="mt-2 break-words whitespace-pre-wrap text-sm text-muted">
+                        {stay.notes}
+                      </p>
                     )}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-
-          <div className="mt-4 grid gap-3">
-            {sortActivities(selectedDay.activities).length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-border-dashed p-6 text-sm text-muted">
-                {t("travelMode.noActivities")}
-              </p>
-            ) : (
-              sortActivities(selectedDay.activities).map((activity) => (
-                <article
-                  className={`min-w-0 rounded-2xl border border-border-card bg-surface p-4 ${
-                    highlightedMapItemKey === `activity:${activity.id}` ? "trip-map-card-focus" : ""
-                  }`}
-                  data-trip-item-key={`activity:${activity.id}`}
-                  key={activity.id}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 flex-1 items-start gap-3">
-                      <div className="grid min-w-16 place-items-center rounded-xl bg-brand-surface px-2 py-2 text-sm font-semibold text-on-brand">
-                        {formatActivityTime(activity, {
-                          allDay: t("tripDetails.allDay"),
-                          timeNotSet: t("tripDetails.timeNotSet"),
-                        })}
+                    <ItemDetailsDisplay
+                      details={stay}
+                      showPrice={itemDetailVisibility.showPrice}
+                      showWebsite={itemDetailVisibility.showWebsite}
+                    />
+                  </article>
+                ))}
+                {mealsForDay.map((meal) => (
+                  <article
+                    className={`min-w-0 rounded-2xl border border-border bg-surface p-4 ${
+                      highlightedMapItemKey === `meal:${meal.id}` ? "trip-map-card-focus" : ""
+                    }`}
+                    data-trip-item-key={`meal:${meal.id}`}
+                    key={meal.id}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 flex-1 items-start gap-3">
+                        <div className="grid min-w-16 place-items-center rounded-xl bg-accent px-2 py-2 text-sm font-semibold text-on-accent">
+                          {formatActivityTime(meal, {
+                            allDay: t("tripDetails.allDay"),
+                            timeNotSet: t("tripDetails.timeNotSet"),
+                          })}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+                            {t("travelMode.meal")}
+                          </p>
+                          <h3 className="mt-1 break-words font-semibold text-brand">
+                            {getDayItemTitle(meal, t("tripDetails.untitledItem"))}
+                          </h3>
+                          {meal.notes?.trim() && (
+                            <p className="mt-2 break-words whitespace-pre-wrap text-sm text-muted">
+                              {meal.notes}
+                            </p>
+                          )}
+                          <ItemDetailsDisplay
+                            details={meal}
+                            showPrice={itemDetailVisibility.showPrice}
+                            showWebsite={itemDetailVisibility.showWebsite}
+                          />
+                        </div>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <h3 className="break-words font-semibold text-brand">
-                          {getDayItemTitle(activity, t("tripDetails.untitledItem"))}
-                        </h3>
-                        {activity.placeAddress && (
-                          <p className="mt-1 break-words text-sm text-muted">
-                            {activity.placeAddress}
-                          </p>
-                        )}
-                        {activity.notes?.trim() && (
-                          <p className="mt-2 break-words whitespace-pre-wrap text-sm text-muted">
-                            {activity.notes}
-                          </p>
-                        )}
-                        <ItemDetailsDisplay
-                          details={activity}
-                          showPrice={itemDetailVisibility.showPrice}
-                          showWebsite={itemDetailVisibility.showWebsite}
+                      {meal.latitude !== null && meal.longitude !== null && (
+                        <MapLocateButton
+                          label={t("tripMap.locate")}
+                          onClick={() => handleLocateItem("meal", meal.id)}
                         />
-                        {activity.googleMapsUrl && (
-                          <a
-                            className="mt-3 inline-flex rounded-lg bg-surface-muted px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-soft"
-                            href={activity.googleMapsUrl}
-                            rel="noreferrer"
-                            target="_blank"
-                          >
-                            {t("tripDetails.openGoogleMaps")}
-                          </a>
-                        )}
-                      </div>
+                      )}
                     </div>
-                    {activity.latitude !== null && activity.longitude !== null && (
-                      <MapLocateButton
-                        label={t("tripMap.locate")}
-                        onClick={() => handleLocateItem("activity", activity.id)}
-                      />
-                    )}
-                  </div>
-                </article>
-              ))
+                  </article>
+                ))}
+              </div>
             )}
+
+            <div className="mt-4 grid gap-3">
+              {sortActivities(selectedDay.activities).length === 0 ? (
+                <p className="rounded-2xl border border-dashed border-border-dashed p-6 text-sm text-muted">
+                  {t("travelMode.noActivities")}
+                </p>
+              ) : (
+                sortActivities(selectedDay.activities).map((activity) => (
+                  <article
+                    className={`min-w-0 rounded-2xl border border-border-card bg-surface p-4 ${
+                      highlightedMapItemKey === `activity:${activity.id}`
+                        ? "trip-map-card-focus"
+                        : ""
+                    }`}
+                    data-trip-item-key={`activity:${activity.id}`}
+                    key={activity.id}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 flex-1 items-start gap-3">
+                        <div className="grid min-w-16 place-items-center rounded-xl bg-brand-surface px-2 py-2 text-sm font-semibold text-on-brand">
+                          {formatActivityTime(activity, {
+                            allDay: t("tripDetails.allDay"),
+                            timeNotSet: t("tripDetails.timeNotSet"),
+                          })}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="break-words font-semibold text-brand">
+                            {getDayItemTitle(activity, t("tripDetails.untitledItem"))}
+                          </h3>
+                          {activity.placeAddress && (
+                            <p className="mt-1 break-words text-sm text-muted">
+                              {activity.placeAddress}
+                            </p>
+                          )}
+                          {activity.notes?.trim() && (
+                            <p className="mt-2 break-words whitespace-pre-wrap text-sm text-muted">
+                              {activity.notes}
+                            </p>
+                          )}
+                          <ItemDetailsDisplay
+                            details={activity}
+                            showPrice={itemDetailVisibility.showPrice}
+                            showWebsite={itemDetailVisibility.showWebsite}
+                          />
+                          {activity.googleMapsUrl && (
+                            <a
+                              className="mt-3 inline-flex rounded-lg bg-surface-muted px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-soft"
+                              href={activity.googleMapsUrl}
+                              rel="noreferrer"
+                              target="_blank"
+                            >
+                              {t("tripDetails.openGoogleMaps")}
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                      {activity.latitude !== null && activity.longitude !== null && (
+                        <MapLocateButton
+                          label={t("tripMap.locate")}
+                          onClick={() => handleLocateItem("activity", activity.id)}
+                        />
+                      )}
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
           </div>
-        </div>
+        </MobileDayPager>
         <TripMap
           focusMarker={mapFocusMarker}
           markers={mapMarkers}

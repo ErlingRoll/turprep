@@ -174,6 +174,9 @@ export function TripMap({
           streetViewControl: false,
           zoom: 2,
           zoomControl: true,
+          zoomControlOptions: {
+            position: google.maps.ControlPosition.TOP_LEFT,
+          },
         })
         mapRef.current = map
         setIsMapReady(true)
@@ -412,7 +415,7 @@ export function TripMap({
     <>
       <button
         aria-expanded={isMobileOpen}
-        className="fixed bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-full bg-brand px-5 py-3 text-sm font-semibold text-on-brand shadow-card lg:hidden"
+        className="fixed bottom-20 left-1/2 z-30 -translate-x-1/2 rounded-full bg-brand px-5 py-3 text-sm font-semibold text-on-brand shadow-card lg:hidden"
         onClick={() => {
           if (markerDetailsCloseTimeoutRef.current !== null) {
             window.clearTimeout(markerDetailsCloseTimeoutRef.current)
@@ -431,7 +434,7 @@ export function TripMap({
           isMobileOpen
             ? "fixed inset-0 z-50 flex h-dvh flex-col rounded-none"
             : "hidden rounded-2xl lg:flex"
-        } border border-border-card bg-surface p-3 lg:sticky lg:top-24 lg:h-[calc(100dvh-24rem)] lg:min-h-96 lg:flex-col`}
+        } border border-border-card bg-surface p-3 pb-24 lg:sticky lg:top-24 lg:h-[calc(100dvh-24rem)] lg:min-h-96 lg:flex-col lg:pb-3`}
       >
         <div className="hidden shrink-0 items-center justify-between gap-3 px-1 lg:flex">
           <div className="flex items-center gap-3">
@@ -494,7 +497,7 @@ export function TripMap({
             </div>
           )}
           <button
-            className="absolute left-3 top-3 z-10 rounded-lg bg-surface px-3 py-2 text-xs font-semibold text-on-surface shadow-card hover:bg-surface-muted"
+            className="absolute right-3 top-3 z-10 rounded-lg bg-surface px-3 py-2 text-xs font-semibold text-on-surface shadow-card hover:bg-surface-muted"
             onClick={resetMapView}
             type="button"
           >
@@ -521,7 +524,7 @@ export function TripMap({
             </div>
           )}
         </div>
-        <div className="mt-3 flex shrink-0 items-center justify-between gap-3 px-1 lg:hidden">
+        <div className="order-first mt-3 flex shrink-0 items-center justify-between gap-3 px-1 lg:hidden">
           <div className="flex items-center gap-3">
             <h2 className="font-semibold text-brand">{t("tripMap.title")}</h2>
             <span className="text-xs text-muted">
@@ -563,6 +566,8 @@ export function TripMap({
               )}
             </div>
           )}
+        </div>
+        <div className="fixed bottom-20 right-3 z-[70] lg:hidden">
           <MobileMenuButton
             closeLabel={t("tripMap.close")}
             isOpen

@@ -22,6 +22,7 @@ type TripDayCardProps = {
   children: ReactNode
   showDividerOnMobile: boolean
   showDividerOnDesktop: boolean
+  isMobileSelected: boolean
 }
 
 export function TripDayCard({
@@ -43,15 +44,23 @@ export function TripDayCard({
   children,
   showDividerOnMobile,
   showDividerOnDesktop,
+  isMobileSelected,
 }: TripDayCardProps) {
   const { t } = useTranslation()
+  const visibilityClass = isMobileSelected
+    ? isSelected
+      ? ""
+      : "lg:hidden"
+    : isSelected
+      ? "hidden lg:block"
+      : "hidden"
 
   return (
     <div
       className={`rounded-2xl bg-page p-4 ${
         showDividerOnMobile ? "border-t border-border-divider" : ""
       } ${showDividerOnDesktop ? "lg:border-t lg:border-border-divider" : "lg:border-t-0"} ${
-        isSelected ? "" : "lg:hidden"
+        visibilityClass
       }`}
     >
       <div className="flex items-start gap-4">

@@ -15,10 +15,14 @@ import { useTripDaySelection } from "./useTripDaySelection"
 import { LanguageSwitcher } from "../../components/LanguageSwitcher"
 import { MobileMenuButton } from "../../components/MobileMenuButton"
 import { ThemeToggle } from "../../components/ThemeToggle"
-import { PRODUCT_NAME } from "../../lib/brand"
+import { PRODUCT_NAME, storageKeys } from "../../lib/brand"
 
 type TripDashboardProps = {
   session: Session
+}
+
+function getInitialShowItemDetails() {
+  return window.localStorage.getItem(storageKeys.showItemDetails) !== "false"
 }
 
 export function TripDashboard({ session }: TripDashboardProps) {
@@ -37,12 +41,12 @@ export function TripDashboard({ session }: TripDashboardProps) {
   const [error, setError] = useState<string | null>(null)
   const [detailsError, setDetailsError] = useState<string | null>(null)
   const [showMobileOptions, setShowMobileOptions] = useState(false)
-  const [showItemDetails, setShowItemDetails] = useState(true)
+  const [showItemDetails, setShowItemDetails] = useState(getInitialShowItemDetails)
   const daySelection = useTripDaySelection(selectedTrip)
 
   useEffect(() => {
-    setShowItemDetails(true)
-  }, [tripId])
+    window.localStorage.setItem(storageKeys.showItemDetails, String(showItemDetails))
+  }, [showItemDetails])
 
   useEffect(() => {
     let isMounted = true

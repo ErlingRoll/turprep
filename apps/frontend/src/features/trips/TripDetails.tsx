@@ -41,6 +41,7 @@ import { TripDayCard } from "./TripDayCard"
 import { TripDayNavigator } from "./TripDayNavigator"
 import { TripDetailsHeader } from "./TripDetailsHeader"
 import { TripMap, type TripMapMarker } from "./TripMap"
+import { MobileDayPager } from "./MobileDayPager"
 import { useTripRealtime } from "./useTripRealtime"
 import { TripItemPreference } from "../../components/TripItemPreference"
 import { ItemDetailsDisplay, type ItemDetailValues } from "../../components/ItemDetails"
@@ -271,6 +272,7 @@ export function TripDetails({
     normalizedGoogleMapsUrl.length > 0 && !isAllowedGoogleMapsUrl(normalizedGoogleMapsUrl)
   const selectedDay =
     currentTrip.days.find((day) => day.date === selectedDayDate) ?? currentTrip.days[0]
+  const mobileSelectedDate = selectedDay?.date ?? selectedDayDate
   const itemDetailVisibility = {
     showPrice: showDetails && currentTrip.itemDetailVisibility.showPrice,
     showWebsite: showDetails && currentTrip.itemDetailVisibility.showWebsite,
@@ -1478,7 +1480,7 @@ export function TripDetails({
           {activityError}
         </p>
       )}
-      <div className="mt-4 lg:grid lg:grid-cols-[15rem_minmax(0,1fr)_minmax(22rem,32rem)] lg:items-start lg:gap-5">
+      <div className="mt-4 pb-24 lg:grid lg:grid-cols-[15rem_minmax(0,1fr)_minmax(22rem,32rem)] lg:items-start lg:gap-5 lg:pb-0">
         <TripDayNavigator
           days={trip.days}
           housingStays={trip.housingStays}
@@ -1554,87 +1556,94 @@ export function TripDetails({
               userId={userId}
             />
           </div>
-          <div className={`grid ${showMobileHousing ? "hidden lg:grid" : ""}`}>
-            {trip.days.map((day, dayIndex) => (
-              <TripDayCard
-                day={day}
-                dayNotes={dayNotes}
-                dayTitle={dayTitle}
-                editingDayDate={editingDayDate}
-                editingItemId={editingItemId}
-                isSavingDayDetails={isSavingDayDetails}
-                isSelected={selectedDayDates.includes(day.date)}
-                key={day.date}
-                onCancelDayDetails={() => setEditingDayDate(null)}
-                onDayNotesChange={setDayNotes}
-                onDayTitleChange={setDayTitle}
-                onEditDayDetails={editDayDetails}
-                onSaveDayDetails={(date) => void handleSaveDayDetails(date)}
-                onToggleActivityForm={toggleActivityForm}
-                openDay={openDay}
-                renderItemForm={renderDayItemForm}
-                showDividerOnDesktop={
-                  dayIndex > 0 &&
-                  selectedDayDates.includes(day.date) &&
-                  trip.days
-                    .slice(0, dayIndex)
-                    .some((previousDay) => selectedDayDates.includes(previousDay.date))
-                }
-                showDividerOnMobile={dayIndex > 0}
-              >
-                {renderDayHousing(day.date)}
-                <DayItemList
+          <MobileDayPager
+            days={trip.days}
+            onSelectDate={(date) => onSelectDay(date, false)}
+            selectedDate={mobileSelectedDate}
+          >
+            <div className={`grid ${showMobileHousing ? "hidden lg:grid" : ""}`}>
+              {trip.days.map((day, dayIndex) => (
+                <TripDayCard
                   day={day}
-                  deletingItemId={deletingActivityId}
-                  draggedItem={draggedItem}
-                  dropTarget={dropTarget}
+                  dayNotes={dayNotes}
+                  dayTitle={dayTitle}
+                  editingDayDate={editingDayDate}
                   editingItemId={editingItemId}
-                  getDayItemRecord={getDayItemRecord}
-                  getDropIndex={getDropIndex}
-                  itemType={plannerTab}
-                  items={getDayItems(day)}
-                  movingItem={movingItem}
-                  onDayDragOver={handleDayDragOver}
-                  onDayDrop={(event, date, itemCount) => {
-                    void handleDayItemDrop(event, date, itemCount)
-                  }}
-                  onDeleteActivity={(activity) => {
-                    requestDeleteActivity(activity)
-                  }}
-                  onDeleteMeal={(meal) => {
-                    requestDeleteMeal(meal)
-                  }}
-                  onEditActivity={editActivity}
-                  onEditMeal={editMeal}
-                  onMoveActivityToBackup={(activity) => void moveActivityToBackup(activity)}
-                  onMoveMealToBackup={(meal) => void moveMealToBackup(meal)}
-                  onLocateItem={handleLocateItem}
-                  onItemDragEnd={() => {
-                    setDraggedItem(null)
-                    setDropTarget(null)
-                  }}
-                  onItemDragOver={handleDayItemDragOver}
-                  onItemDragStart={handleDayItemDragStart}
-                  onItemDrop={(event, date, itemIndex) => {
-                    void handleDayItemDrop(event, date, itemIndex)
-                  }}
-                  onStartMoving={startMovingItem}
-                  onPreferenceChange={(itemType, itemId, value) => {
-                    void handlePreferenceChange(itemType, itemId, value)
-                  }}
-                  currencies={currencies}
-                  onSaveDetails={(record, details) => handleSaveDayItemDetails(record, details)}
-                  showDetails={showDetails}
-                  renderEditForm={renderDayItemForm}
-                  renderMoveForm={renderMoveItemForm}
-                  highlightedItemKey={highlightedMapItemKey}
-                  preferences={currentTrip.preferences}
-                  savingPreferenceKey={savingPreferenceKey}
-                  userId={userId}
-                />
-              </TripDayCard>
-            ))}
-          </div>
+                  isSavingDayDetails={isSavingDayDetails}
+                  isSelected={selectedDayDates.includes(day.date)}
+                  isMobileSelected={day.date === mobileSelectedDate}
+                  key={day.date}
+                  onCancelDayDetails={() => setEditingDayDate(null)}
+                  onDayNotesChange={setDayNotes}
+                  onDayTitleChange={setDayTitle}
+                  onEditDayDetails={editDayDetails}
+                  onSaveDayDetails={(date) => void handleSaveDayDetails(date)}
+                  onToggleActivityForm={toggleActivityForm}
+                  openDay={openDay}
+                  renderItemForm={renderDayItemForm}
+                  showDividerOnDesktop={
+                    dayIndex > 0 &&
+                    selectedDayDates.includes(day.date) &&
+                    trip.days
+                      .slice(0, dayIndex)
+                      .some((previousDay) => selectedDayDates.includes(previousDay.date))
+                  }
+                  showDividerOnMobile={dayIndex > 0}
+                >
+                  {renderDayHousing(day.date)}
+                  <DayItemList
+                    day={day}
+                    deletingItemId={deletingActivityId}
+                    draggedItem={draggedItem}
+                    dropTarget={dropTarget}
+                    editingItemId={editingItemId}
+                    getDayItemRecord={getDayItemRecord}
+                    getDropIndex={getDropIndex}
+                    itemType={plannerTab}
+                    items={getDayItems(day)}
+                    movingItem={movingItem}
+                    onDayDragOver={handleDayDragOver}
+                    onDayDrop={(event, date, itemCount) => {
+                      void handleDayItemDrop(event, date, itemCount)
+                    }}
+                    onDeleteActivity={(activity) => {
+                      requestDeleteActivity(activity)
+                    }}
+                    onDeleteMeal={(meal) => {
+                      requestDeleteMeal(meal)
+                    }}
+                    onEditActivity={editActivity}
+                    onEditMeal={editMeal}
+                    onMoveActivityToBackup={(activity) => void moveActivityToBackup(activity)}
+                    onMoveMealToBackup={(meal) => void moveMealToBackup(meal)}
+                    onLocateItem={handleLocateItem}
+                    onItemDragEnd={() => {
+                      setDraggedItem(null)
+                      setDropTarget(null)
+                    }}
+                    onItemDragOver={handleDayItemDragOver}
+                    onItemDragStart={handleDayItemDragStart}
+                    onItemDrop={(event, date, itemIndex) => {
+                      void handleDayItemDrop(event, date, itemIndex)
+                    }}
+                    onStartMoving={startMovingItem}
+                    onPreferenceChange={(itemType, itemId, value) => {
+                      void handlePreferenceChange(itemType, itemId, value)
+                    }}
+                    currencies={currencies}
+                    onSaveDetails={(record, details) => handleSaveDayItemDetails(record, details)}
+                    showDetails={showDetails}
+                    renderEditForm={renderDayItemForm}
+                    renderMoveForm={renderMoveItemForm}
+                    highlightedItemKey={highlightedMapItemKey}
+                    preferences={currentTrip.preferences}
+                    savingPreferenceKey={savingPreferenceKey}
+                    userId={userId}
+                  />
+                </TripDayCard>
+              ))}
+            </div>
+          </MobileDayPager>
         </div>
         <aside className="contents lg:block">
           <TripMap
