@@ -7,7 +7,7 @@ export function MapLocateButton({ label, onClick }: MapLocateButtonProps) {
   return (
     <button
       aria-label={label}
-      className="touch-manipulation rounded-xl border border-border bg-surface p-2 text-on-surface hover:bg-surface-muted"
+      className="grid size-9 place-items-center touch-manipulation rounded-xl border border-border bg-surface p-2 text-on-surface hover:bg-surface-muted"
       onClick={onClick}
       title={label}
       type="button"

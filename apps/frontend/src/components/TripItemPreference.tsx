@@ -54,7 +54,7 @@ export function TripItemPreference({
         <button
           aria-expanded={isVotingOpen}
           aria-label={t("tripPreferences.vote")}
-          className="rounded-lg p-2 text-muted hover:bg-surface-muted hover:text-on-surface disabled:opacity-50"
+          className="grid size-9 place-items-center rounded-xl border border-border bg-surface p-2 text-muted hover:bg-surface-muted hover:text-on-surface disabled:opacity-50"
           disabled={disabled}
           onClick={() => setIsVotingOpen((isOpen) => !isOpen)}
           title={t("tripPreferences.vote")}

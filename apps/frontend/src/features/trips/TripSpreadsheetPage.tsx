@@ -261,6 +261,29 @@ type SpreadsheetItemActionsProps = {
   onOpenMap?: () => void
 }
 
+function GoogleIcon() {
+  return (
+    <svg aria-hidden="true" className="size-5" viewBox="0 0 24 24">
+      <path
+        d="M21.35 12.27c0-.79-.07-1.55-.22-2.27H12v4.3h5.24a4.48 4.48 0 0 1-1.94 2.94v2.45h3.14c1.84-1.7 2.91-4.2 2.91-7.42Z"
+        fill="#4285f4"
+      />
+      <path
+        d="M12 21.5c2.63 0 4.84-.87 6.45-2.36l-3.14-2.45c-.87.58-1.98.92-3.31.92-2.55 0-4.71-1.72-5.49-4.04H3.27v2.53A9.75 9.75 0 0 0 12 21.5Z"
+        fill="#34a853"
+      />
+      <path
+        d="M6.51 13.57A5.86 5.86 0 0 1 6.2 12c0-.54.09-1.07.3-1.57V7.9H3.27A9.5 9.5 0 0 0 2.25 12c0 1.48.35 2.88 1.02 4.1l3.24-2.53Z"
+        fill="#fbbc05"
+      />
+      <path
+        d="M12 6.39c1.43 0 2.71.49 3.72 1.45l2.79-2.79C16.84 3.46 14.63 2.5 12 2.5a9.75 9.75 0 0 0-8.73 5.4l3.24 2.53C7.29 8.11 9.45 6.39 12 6.39Z"
+        fill="#ea4335"
+      />
+    </svg>
+  )
+}
+
 function SpreadsheetItemActions({
   isBusy,
   item,
@@ -311,53 +334,39 @@ function SpreadsheetItemActions({
       {onOpenMap && item.latitude !== null && item.longitude !== null && (
         <MapLocateButton label={t("tripMap.locate")} onClick={onOpenMap} />
       )}
-        {hasValidMapsUrl ? (
+      {hasValidMapsUrl ? (
           <a
             aria-label={t("tripDetails.openGoogleMaps")}
-            className="rounded-lg p-2 text-muted hover:bg-surface-muted hover:text-brand"
+          className="grid size-9 place-items-center rounded-xl border border-border bg-surface p-2 text-muted hover:bg-surface-muted hover:text-brand"
             href={item.googleMapsUrl ?? undefined}
             rel="noreferrer"
             target="_blank"
             title={t("tripDetails.openGoogleMaps")}
           >
-            <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24">
-              <path
-                d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"
-                stroke="currentColor"
-                strokeWidth="1.8"
-              />
-              <circle cx="12" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.8" />
-            </svg>
+            <GoogleIcon />
           </a>
         ) : (
           <button
             aria-label={t("tripDetails.openGoogleMaps")}
-            className="cursor-not-allowed rounded-lg p-2 text-disabled"
+            className="grid size-9 cursor-not-allowed place-items-center rounded-xl border border-border bg-surface p-2 text-disabled opacity-50 grayscale"
             disabled
             title={t("tripDetails.openGoogleMaps")}
             type="button"
           >
-            <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24">
-              <path
-                d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"
-                stroke="currentColor"
-                strokeWidth="1.8"
-              />
-              <circle cx="12" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.8" />
-            </svg>
+            <GoogleIcon />
           </button>
         )}
         <div className="relative">
           <button
             aria-expanded={isMenuOpen}
             aria-label={t("common.menu")}
-            className="rounded-lg p-2 text-muted hover:bg-surface-muted hover:text-brand disabled:opacity-50"
+            className="grid size-9 place-items-center rounded-xl border border-border bg-surface p-2 text-muted hover:bg-surface-muted hover:text-brand disabled:opacity-50"
             disabled={isBusy}
             onClick={() => setIsMenuOpen((current) => !current)}
             title={t("common.menu")}
             type="button"
           >
-            <svg aria-hidden="true" className="size-4" fill="currentColor" viewBox="0 0 24 24">
+            <svg aria-hidden="true" className="size-5" fill="currentColor" viewBox="0 0 24 24">
               <circle cx="5" cy="12" r="1.7" />
               <circle cx="12" cy="12" r="1.7" />
               <circle cx="19" cy="12" r="1.7" />
