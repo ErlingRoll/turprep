@@ -32,7 +32,10 @@ import { GoogleMapsLinkButton } from "../../components/GoogleMapsLinkButton"
 import { MapLocateButton } from "../../components/MapLocateButton"
 import { SettingsIcon } from "../../components/SettingsIcon"
 import { TimePicker } from "../../components/TimePicker"
-import { TripItemPreference } from "../../components/TripItemPreference"
+import {
+  TripItemPreference,
+  TripItemPreferenceDistribution,
+} from "../../components/TripItemPreference"
 import { DayItemForm } from "./DayItemForm"
 import { getDateLocale } from "../../i18n"
 import { getDayItemTitle, sortDayItems } from "../../lib/activity-format"
@@ -240,8 +243,18 @@ function sortRowsByTime(rows: ItineraryRow[]): ItineraryRow[] {
   }))
 }
 
-function SpreadsheetCell({ children }: { children: ReactNode }) {
-  return <td className="border-b border-border-divider px-3 py-2 align-top text-sm">{children}</td>
+function SpreadsheetCell({
+  children,
+  className = "",
+}: {
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <td className={`border-b border-border-divider px-3 py-2 align-top text-sm ${className}`}>
+      {children}
+    </td>
+  )
 }
 
 function SpreadsheetHeaderCell({ children }: { children: ReactNode }) {
@@ -330,7 +343,7 @@ function SpreadsheetItemActions({
   }
 
   return (
-    <div className="flex items-start justify-end gap-1">
+    <div className="flex items-stretch justify-end gap-1">
       {onOpenMap && item.latitude !== null && item.longitude !== null && (
         <MapLocateButton label={t("tripMap.locate")} onClick={onOpenMap} />
       )}
@@ -1760,24 +1773,24 @@ export function TripSpreadsheetPage({
                           )
 
                           return (
-                            <tr
-                              className="hover:bg-surface-soft"
-                              data-drop-day={day.date}
-                              data-drop-item-index={itemIndex}
-                              draggable
-                              key={itemKey}
-                              onDragOver={(event) =>
-                                handleSpreadsheetDragOver(event, day.date)
-                              }
-                              onDragEnd={handleSpreadsheetDragEnd}
-                              onDragStart={(event) =>
-                                handleSpreadsheetDragStart(event, day.date, {
-                                  item,
-                                  type,
-                                })
-                              }
-                              onDrop={(event) => void handleSpreadsheetDrop(event)}
-                            >
+                            <Fragment key={itemKey}>
+                              <tr
+                                className="hover:bg-surface-soft"
+                                data-drop-day={day.date}
+                                data-drop-item-index={itemIndex}
+                                draggable
+                                onDragOver={(event) =>
+                                  handleSpreadsheetDragOver(event, day.date)
+                                }
+                                onDragEnd={handleSpreadsheetDragEnd}
+                                onDragStart={(event) =>
+                                  handleSpreadsheetDragStart(event, day.date, {
+                                    item,
+                                    type,
+                                  })
+                                }
+                                onDrop={(event) => void handleSpreadsheetDrop(event)}
+                              >
                               <SpreadsheetCell>
                                 {formatDate(item.tripDate ?? day.date)}
                               </SpreadsheetCell>
@@ -1916,8 +1929,8 @@ export function TripSpreadsheetPage({
                                 </>
                               )}
                               {showWebsite && <SpreadsheetCell>{item.website}</SpreadsheetCell>}
-                              <SpreadsheetCell>
-                                <div className="flex items-start justify-end gap-1">
+                              <SpreadsheetCell className="relative">
+                                <div className="flex items-start justify-end gap-1 pr-1">
                                   <TripItemPreference
                                     compact
                                     disabled={savingPreferenceKey === `${type}:${item.id}`}
@@ -1940,8 +1953,17 @@ export function TripSpreadsheetPage({
                                     onOpenMap={() => onOpenMap(type, item.id)}
                                   />
                                 </div>
+                                <div className="pointer-events-none absolute inset-y-0 right-0">
+                                  <TripItemPreferenceDistribution
+                                    itemId={item.id}
+                                    itemType={type}
+                                    orientation="vertical"
+                                    preferences={trip.preferences}
+                                  />
+                                </div>
                               </SpreadsheetCell>
                             </tr>
+                            </Fragment>
                           )
                         })
                       )}

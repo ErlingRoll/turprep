@@ -24,6 +24,62 @@ const preferenceClasses: Record<TripItemPreferenceValue, string> = {
   red: "bg-preference-red",
 }
 
+type TripItemPreferenceDistributionProps = {
+  itemId: string
+  itemType: TripItemType
+  preferences: TripItemPreferenceRecord[]
+  orientation?: "horizontal" | "vertical"
+}
+
+export function TripItemPreferenceDistribution({
+  itemId,
+  itemType,
+  preferences,
+  orientation = "horizontal",
+}: TripItemPreferenceDistributionProps) {
+  const { t } = useTranslation()
+  const itemPreferences = preferences.filter(
+    (preference) => preference.itemType === itemType && preference.itemId === itemId,
+  )
+  const totalVotes = itemPreferences.length
+  const counts = Object.fromEntries(
+    preferenceValues.map((value) => [
+      value,
+      itemPreferences.filter((preference) => preference.value === value).length,
+    ]),
+  ) as Record<TripItemPreferenceValue, number>
+  const summary = t("tripPreferences.summary", {
+    green: counts.green,
+    yellow: counts.yellow,
+    red: counts.red,
+  })
+  const isVertical = orientation === "vertical"
+
+  return (
+    <div
+      aria-label={summary}
+      className={`flex overflow-hidden rounded-full bg-surface-muted ${
+        isVertical ? "h-full w-px flex-col" : "h-px w-full"
+      }`}
+      role="img"
+      title={summary}
+    >
+      {totalVotes > 0 &&
+        preferenceValues.map((value) => (
+          <div
+            className={`min-w-0 ${preferenceClasses[value]}`}
+            key={value}
+            style={
+              isVertical
+                ? { height: `${(counts[value] / totalVotes) * 100}%` }
+                : { width: `${(counts[value] / totalVotes) * 100}%` }
+            }
+          />
+        ))}
+    </div>
+  )
+}
+
 export function TripItemPreference({
   itemId,
   itemType,
@@ -47,6 +103,8 @@ export function TripItemPreference({
       itemPreferences.filter((preference) => preference.value === value).length,
     ]),
   ) as Record<TripItemPreferenceValue, number>
+  const getPercentage = (value: TripItemPreferenceValue) =>
+    totalVotes === 0 ? 0 : Math.round((counts[value] / totalVotes) * 100)
 
   if (compact) {
     return (
@@ -89,6 +147,9 @@ export function TripItemPreference({
                     className={`size-2.5 rounded-full ${preferenceClasses[value]}`}
                   />
                   {t(`tripPreferences.${value}`)}
+                  <span className="ml-auto tabular-nums text-muted">
+                    {getPercentage(value)}%
+                  </span>
                 </button>
               )
             })}
@@ -96,10 +157,6 @@ export function TripItemPreference({
         )}
       </div>
     )
-  }
-
-  function getPercentage(value: TripItemPreferenceValue) {
-    return totalVotes === 0 ? 0 : Math.round((counts[value] / totalVotes) * 100)
   }
 
   return (
