@@ -1,11 +1,4 @@
-﻿import {
-  Fragment,
-  useEffect,
-  useRef,
-  useState,
-  type DragEvent,
-  type FormEvent,
-} from "react"
+﻿import { Fragment, useEffect, useRef, useState, type DragEvent, type FormEvent } from "react"
 import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
 import {
@@ -1431,17 +1424,19 @@ export function TripSpreadsheetPage({
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             {editingDayTitleDate === day.date ? (
                               <form
-                                className="flex min-w-0 flex-1 flex-wrap items-center gap-2"
+                                className="flex min-w-0 flex-1 flex-wrap items-center gap-0"
                                 onSubmit={(event) => {
                                   event.preventDefault()
                                   void saveDayTitle(day.date)
                                 }}
                               >
-                                <span className="shrink-0 text-brand">{formatDate(day.date)}</span>
+                                <span className="w-30 shrink-0 text-brand">
+                                  {formatDate(day.date)}
+                                </span>
                                 <input
                                   aria-label={t("tripDetails.dayTitle")}
                                   autoFocus
-                                  className="min-w-48 flex-1 rounded-lg border border-border bg-surface px-2 py-1.5 text-sm font-normal text-on-surface outline-none focus:border-brand"
+                                  className="w-56 shrink-0 rounded-lg border border-border bg-surface px-2 py-1.5 text-sm font-normal text-on-surface outline-none focus:border-brand"
                                   disabled={isSavingDayTitle}
                                   maxLength={200}
                                   onChange={(event) => setDayTitleDraft(event.target.value)}
@@ -1449,21 +1444,23 @@ export function TripSpreadsheetPage({
                                   type="text"
                                   value={dayTitleDraft}
                                 />
-                                <button
-                                  className="rounded-lg bg-brand-surface px-2 py-1 text-xs font-semibold text-on-brand disabled:opacity-50"
-                                  disabled={isSavingDayTitle}
-                                  type="submit"
-                                >
-                                  {isSavingDayTitle ? t("common.saving") : t("common.save")}
-                                </button>
-                                <button
-                                  className="rounded-lg border border-border px-2 py-1 text-xs font-semibold text-muted hover:bg-surface-muted hover:text-on-surface disabled:opacity-50"
-                                  disabled={isSavingDayTitle}
-                                  onClick={cancelEditingDayTitle}
-                                  type="button"
-                                >
-                                  {t("common.cancel")}
-                                </button>
+                                <span className="ml-2 flex gap-2">
+                                  <button
+                                    className="rounded-lg bg-brand-surface px-2 py-1 text-xs font-semibold text-on-brand disabled:opacity-50"
+                                    disabled={isSavingDayTitle}
+                                    type="submit"
+                                  >
+                                    {isSavingDayTitle ? t("common.saving") : t("common.save")}
+                                  </button>
+                                  <button
+                                    className="rounded-lg border border-border px-2 py-1 text-xs font-semibold text-muted hover:bg-surface-muted hover:text-on-surface disabled:opacity-50"
+                                    disabled={isSavingDayTitle}
+                                    onClick={cancelEditingDayTitle}
+                                    type="button"
+                                  >
+                                    {t("common.cancel")}
+                                  </button>
+                                </span>
                                 {dayTitleError && (
                                   <p className="basis-full text-xs font-normal text-error">
                                     {dayTitleError}
@@ -1472,9 +1469,11 @@ export function TripSpreadsheetPage({
                               </form>
                             ) : (
                               <div className="flex min-w-0 flex-1 items-baseline gap-1">
-                                <span className="shrink-0 text-brand">{formatDate(day.date)}</span>
+                                <span className="w-29 shrink-0 text-brand">
+                                  {formatDate(day.date)}
+                                </span>
                                 <button
-                                  className={`min-w-0 break-words text-left font-semibold ${
+                                  className={`w-56 min-w-0 shrink-0 break-words text-left !text-lg font-semibold ${
                                     day.title?.trim()
                                       ? "text-on-surface hover:text-brand"
                                       : "text-muted hover:text-brand"
@@ -1482,7 +1481,6 @@ export function TripSpreadsheetPage({
                                   onClick={() => startEditingDayTitle(day)}
                                   type="button"
                                 >
-                                  {"\u00b7 "}
                                   {day.title?.trim() || t("tripDetails.dayTitle")}
                                 </button>
                               </div>
@@ -1558,13 +1556,17 @@ export function TripSpreadsheetPage({
                               itineraryColumnCount={itineraryColumnCount}
                               onStartEditing={startEditing}
                               onUpdateDraft={setDraft}
-                              onSaveField={(type, item, field) => void saveEditingField(type, item, field)}
+                              onSaveField={(type, item, field) =>
+                                void saveEditingField(type, item, field)
+                              }
                               onCancelEditing={cancelEditing}
                               onSetPendingDeletion={(deletion) => setPendingDeletion(deletion)}
                               onSaveGoogleMapsUrl={saveItemGoogleMapsUrl}
                               onMoveToBackup={moveItemToBackup}
                               onOpenMap={onOpenMap}
-                              onPreferenceChange={(itemType, itemId, value) => void handlePreferenceChange(itemType, itemId, value)}
+                              onPreferenceChange={(itemType, itemId, value) =>
+                                void handlePreferenceChange(itemType, itemId, value)
+                              }
                               onDragStart={handleSpreadsheetDragStart}
                               onDragOver={handleSpreadsheetDragOver}
                               onDragEnd={handleSpreadsheetDragEnd}
