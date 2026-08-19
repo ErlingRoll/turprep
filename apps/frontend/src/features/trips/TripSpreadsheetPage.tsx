@@ -12,6 +12,8 @@ import { useTranslation } from "react-i18next"
 import {
   createActivity,
   createMeal,
+  deleteActivity,
+  deleteMeal,
   updateActivity,
   getTrip,
   updateHousingStay,
@@ -24,6 +26,7 @@ import {
   type TripDetail,
 } from "../../api"
 import { DatePicker } from "../../components/DatePicker"
+import { ConfirmDialog } from "../../components/ConfirmDialog"
 import { GoogleMapsLinkButton } from "../../components/GoogleMapsLinkButton"
 import { SettingsIcon } from "../../components/SettingsIcon"
 import { TimePicker } from "../../components/TimePicker"
@@ -31,7 +34,7 @@ import { DayItemForm } from "./DayItemForm"
 import { getDateLocale } from "../../i18n"
 import { getDayItemTitle, sortDayItems } from "../../lib/activity-format"
 import { getDefaultCurrency } from "../../lib/currency"
-import { formatLongDate } from "../../lib/date-format"
+import { formatDate } from "../../lib/date-format"
 import { getErrorMessage } from "../../lib/errors"
 import { isAllowedGoogleMapsUrl } from "@turprep/models"
 import {
@@ -109,6 +112,10 @@ type CreateItemDraft = ItemDraft & {
 
 type EditableField = "endTime" | "notes" | "startTime" | "title"
 type HousingEditableField = "checkIn" | "checkOut" | "name" | "notes" | "price" | "website"
+type PendingDeletion = {
+  item: Activity | Meal
+  type: ItineraryRow["type"]
+}
 const housingEditableFields: HousingEditableField[] = [
   "name",
   "checkIn",
@@ -235,14 +242,172 @@ function SpreadsheetHeaderCell({ children }: { children: ReactNode }) {
   )
 }
 
-function LinkCell({ href, label }: { href: string | null; label: string }) {
-  if (!href || !isAllowedGoogleMapsUrl(href)) {
-    return <SpreadsheetCell>{null}</SpreadsheetCell>
+type SpreadsheetItemActionsProps = {
+  isBusy: boolean
+  item: Activity | Meal
+  onChangeGoogleMapsUrl: (googleMapsUrl: string | null) => Promise<string | null>
+  onDelete: () => void
+}
+
+function SpreadsheetItemActions({
+  isBusy,
+  item,
+  onChangeGoogleMapsUrl,
+  onDelete,
+}: SpreadsheetItemActionsProps) {
+  const { t } = useTranslation()
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [isEditingMaps, setIsEditingMaps] = useState(false)
+  const [mapsDraft, setMapsDraft] = useState("")
+  const [mapsError, setMapsError] = useState<string | null>(null)
+  const hasValidMapsUrl = Boolean(
+    item.googleMapsUrl && isAllowedGoogleMapsUrl(item.googleMapsUrl),
+  )
+
+  function startEditingMaps() {
+    setMapsDraft(item.googleMapsUrl ?? "")
+    setMapsError(null)
+    setIsEditingMaps(true)
+  }
+
+  async function saveMaps(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const normalizedGoogleMapsUrl = mapsDraft.trim()
+
+    if (
+      normalizedGoogleMapsUrl.length > 0 &&
+      !isAllowedGoogleMapsUrl(normalizedGoogleMapsUrl)
+    ) {
+      setMapsError(t("errors.googleMapsInvalid"))
+      return
+    }
+
+    const error = await onChangeGoogleMapsUrl(normalizedGoogleMapsUrl || null)
+    if (error) {
+      setMapsError(error)
+      return
+    }
+
+    setIsEditingMaps(false)
+    setIsMenuOpen(false)
   }
 
   return (
     <SpreadsheetCell>
-      <GoogleMapsLinkButton href={href} label={label} />
+      <div className="flex items-start justify-end gap-1">
+        {hasValidMapsUrl ? (
+          <a
+            aria-label={t("tripDetails.openGoogleMaps")}
+            className="rounded-lg p-2 text-muted hover:bg-surface-muted hover:text-brand"
+            href={item.googleMapsUrl ?? undefined}
+            rel="noreferrer"
+            target="_blank"
+            title={t("tripDetails.openGoogleMaps")}
+          >
+            <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24">
+              <path
+                d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"
+                stroke="currentColor"
+                strokeWidth="1.8"
+              />
+              <circle cx="12" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+            </svg>
+          </a>
+        ) : (
+          <button
+            aria-label={t("tripDetails.openGoogleMaps")}
+            className="cursor-not-allowed rounded-lg p-2 text-disabled"
+            disabled
+            title={t("tripDetails.openGoogleMaps")}
+            type="button"
+          >
+            <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24">
+              <path
+                d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"
+                stroke="currentColor"
+                strokeWidth="1.8"
+              />
+              <circle cx="12" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+            </svg>
+          </button>
+        )}
+        <div className="relative">
+          <button
+            aria-expanded={isMenuOpen}
+            aria-label={t("common.menu")}
+            className="rounded-lg p-2 text-muted hover:bg-surface-muted hover:text-brand disabled:opacity-50"
+            disabled={isBusy}
+            onClick={() => setIsMenuOpen((current) => !current)}
+            title={t("common.menu")}
+            type="button"
+          >
+            <svg aria-hidden="true" className="size-4" fill="currentColor" viewBox="0 0 24 24">
+              <circle cx="5" cy="12" r="1.7" />
+              <circle cx="12" cy="12" r="1.7" />
+              <circle cx="19" cy="12" r="1.7" />
+            </svg>
+          </button>
+          {isMenuOpen && (
+            <div className="absolute right-0 top-full z-20 mt-1 grid min-w-52 gap-1 rounded-xl border border-border bg-surface p-1 shadow-popover">
+              {!isEditingMaps ? (
+                <>
+                  <button
+                    className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-on-surface hover:bg-surface-muted"
+                    onClick={startEditingMaps}
+                    type="button"
+                  >
+                    {t("spreadsheet.changeGoogleMaps")}
+                  </button>
+                  <button
+                    className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-error hover:bg-danger-surface"
+                    onClick={() => {
+                      setIsMenuOpen(false)
+                      onDelete()
+                    }}
+                    type="button"
+                  >
+                    {t("common.delete")}
+                  </button>
+                </>
+              ) : (
+                <form className="grid gap-2 p-2" onSubmit={(event) => void saveMaps(event)}>
+                  <label className="grid gap-1 text-xs font-semibold text-muted">
+                    {t("spreadsheet.changeGoogleMaps")}
+                    <input
+                      autoFocus
+                      className="w-64 rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-on-surface outline-none focus:border-brand"
+                      onChange={(event) => {
+                        setMapsDraft(event.target.value)
+                        setMapsError(null)
+                      }}
+                      placeholder={t("tripDetails.googleMapsPlaceholder")}
+                      type="url"
+                      value={mapsDraft}
+                    />
+                  </label>
+                  {mapsError && <p className="text-xs text-error">{mapsError}</p>}
+                  <div className="flex justify-end gap-2">
+                    <button
+                      className="rounded-lg px-2 py-1 text-xs font-semibold text-muted hover:bg-surface-muted"
+                      onClick={() => setIsEditingMaps(false)}
+                      type="button"
+                    >
+                      {t("common.cancel")}
+                    </button>
+                    <button
+                      className="rounded-lg bg-brand-surface px-2 py-1 text-xs font-semibold text-on-brand disabled:opacity-50"
+                      disabled={isBusy}
+                      type="submit"
+                    >
+                      {isBusy ? t("common.saving") : t("common.save")}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </SpreadsheetCell>
   )
 }
@@ -268,6 +433,7 @@ export function TripSpreadsheetPage({
   const [createGoogleMapsError, setCreateGoogleMapsError] = useState<string | null>(null)
   const [draggedItem, setDraggedItem] = useState<SpreadsheetDraggedItem | null>(null)
   const [dropTarget, setDropTargetState] = useState<SpreadsheetDropTarget | null>(null)
+  const [pendingDeletion, setPendingDeletion] = useState<PendingDeletion | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [reorderError, setReorderError] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
@@ -518,6 +684,66 @@ export function TripSpreadsheetPage({
       setCreateGoogleMapsError(null)
     } catch (reason: unknown) {
       setCreateError(getErrorMessage(reason))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function saveItemGoogleMapsUrl(
+    type: ItineraryRow["type"],
+    item: Activity | Meal,
+    googleMapsUrl: string | null,
+  ): Promise<string | null> {
+    setIsSaving(true)
+    setSaveError(null)
+
+    try {
+      if (type === "meal") {
+        const savedMeal = await updateMeal(accessToken, trip.id, item.id, { googleMapsUrl })
+        onTripUpdated(replaceMealInTrip(trip, savedMeal))
+      } else {
+        const savedActivity = await updateActivity(accessToken, trip.id, item.id, { googleMapsUrl })
+        onTripUpdated(replaceActivityInTrip(trip, savedActivity))
+      }
+
+      return null
+    } catch (reason: unknown) {
+      return getErrorMessage(reason)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function confirmPendingDeletion() {
+    if (!pendingDeletion) {
+      return
+    }
+
+    const { item, type } = pendingDeletion
+    setIsSaving(true)
+    setSaveError(null)
+
+    try {
+      if (type === "meal") {
+        await deleteMeal(accessToken, trip.id, item.id)
+        onTripUpdated({
+          ...trip,
+          meals: trip.meals.filter((meal) => meal.id !== item.id),
+        })
+      } else {
+        await deleteActivity(accessToken, trip.id, item.id)
+        onTripUpdated({
+          ...trip,
+          days: trip.days.map((day) => ({
+            ...day,
+            activities: day.activities.filter((activity) => activity.id !== item.id),
+          })),
+        })
+      }
+
+      setPendingDeletion(null)
+    } catch (reason: unknown) {
+      setSaveError(getErrorMessage(reason))
     } finally {
       setIsSaving(false)
     }
@@ -1000,8 +1226,8 @@ export function TripSpreadsheetPage({
           <div className="flex items-center gap-3">
             <p className="text-sm text-muted">
               {t("spreadsheet.tripDates", {
-                start: formatLongDate(trip.startDate),
-                end: formatLongDate(trip.endDate),
+                start: formatDate(trip.startDate),
+                end: formatDate(trip.endDate),
               })}
             </p>
             <button
@@ -1025,6 +1251,9 @@ export function TripSpreadsheetPage({
           />
         )}
         {reorderError && <p className="mt-3 text-sm text-error">{reorderError}</p>}
+        {saveError && !editingFieldKey && !housingEditingKey && (
+          <p className="mt-3 text-sm text-error">{saveError}</p>
+        )}
 
         <div className="relative left-1/2 mt-5 w-screen -translate-x-1/2 px-2">
           <div className="mx-auto w-fit rounded-2xl border border-border-card bg-surface">
@@ -1035,11 +1264,9 @@ export function TripSpreadsheetPage({
               <colgroup>
                 <col className="w-52" />
                 <col className="w-30" />
-                <col className="w-26" />
                 <col className="w-48" />
                 <col className="w-16" />
                 <col className="w-16" />
-                <col className="w-32" />
                 <col className="w-48" />
                 {showPrice && (
                   <>
@@ -1053,11 +1280,9 @@ export function TripSpreadsheetPage({
                 <tr>
                   <SpreadsheetHeaderCell>{t("spreadsheet.housing")}</SpreadsheetHeaderCell>
                   <SpreadsheetHeaderCell>{t("spreadsheet.date")}</SpreadsheetHeaderCell>
-                  <SpreadsheetHeaderCell>{t("spreadsheet.type")}</SpreadsheetHeaderCell>
                   <SpreadsheetHeaderCell>{t("spreadsheet.title")}</SpreadsheetHeaderCell>
                   <SpreadsheetHeaderCell>{t("spreadsheet.start")}</SpreadsheetHeaderCell>
                   <SpreadsheetHeaderCell>{t("spreadsheet.end")}</SpreadsheetHeaderCell>
-                  <SpreadsheetHeaderCell>{t("spreadsheet.googleMaps")}</SpreadsheetHeaderCell>
                   <SpreadsheetHeaderCell>{t("spreadsheet.notes")}</SpreadsheetHeaderCell>
                   {showPrice && (
                     <>
@@ -1068,6 +1293,7 @@ export function TripSpreadsheetPage({
                   {showWebsite && (
                     <SpreadsheetHeaderCell>{t("spreadsheet.website")}</SpreadsheetHeaderCell>
                   )}
+                  <SpreadsheetHeaderCell>{null}</SpreadsheetHeaderCell>
                 </tr>
               </thead>
               <tbody>
@@ -1140,7 +1366,7 @@ export function TripSpreadsheetPage({
                                     type="button"
                                   >
                                     {housing.checkIn
-                                      ? formatLongDate(housing.checkIn)
+                                      ? formatDate(housing.checkIn)
                                       : t("tripDetails.checkIn")}
                                   </button>
                                 )}
@@ -1164,7 +1390,7 @@ export function TripSpreadsheetPage({
                                     type="button"
                                   >
                                     {housing.checkOut
-                                      ? formatLongDate(housing.checkOut)
+                                      ? formatDate(housing.checkOut)
                                       : t("tripDetails.checkOut")}
                                   </button>
                                 )}
@@ -1327,7 +1553,7 @@ export function TripSpreadsheetPage({
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <span>
-                              {formatLongDate(day.date)}
+                              {formatDate(day.date)}
                               {day.title?.trim() ? ` · ${day.title}` : ""}
                             </span>
                             <span className="flex flex-wrap gap-2 normal-case tracking-normal">
@@ -1421,22 +1647,7 @@ export function TripSpreadsheetPage({
                               onDrop={(event) => void handleSpreadsheetDrop(event)}
                             >
                               <SpreadsheetCell>
-                                {formatLongDate(item.tripDate ?? day.date)}
-                              </SpreadsheetCell>
-                              <SpreadsheetCell>
-                                <span className="flex items-center justify-between gap-2">
-                                  <span className="inline-flex items-center gap-2">
-                                    <span
-                                      aria-hidden="true"
-                                      className={`size-2.5 rounded-full ${
-                                        type === "activity" ? "bg-type-activity" : "bg-type-meal"
-                                      }`}
-                                    />
-                                    {type === "activity"
-                                      ? t("spreadsheet.activity")
-                                      : t("spreadsheet.meal")}
-                                  </span>
-                                </span>
+                                {formatDate(item.tripDate ?? day.date)}
                               </SpreadsheetCell>
                               <SpreadsheetCell>
                                 {activeField === "title" && draft ? (
@@ -1458,7 +1669,11 @@ export function TripSpreadsheetPage({
                                   </>
                                 ) : (
                                   <button
-                                    className="w-full cursor-text text-left transition hover:text-brand"
+                                    className={`w-full cursor-text text-left underline decoration-2 underline-offset-4 transition hover:text-brand ${
+                                      type === "activity"
+                                        ? "decoration-type-activity"
+                                        : "decoration-type-meal"
+                                    }`}
                                     onClick={() => startEditing(type, item, "title")}
                                     type="button"
                                   >
@@ -1534,10 +1749,6 @@ export function TripSpreadsheetPage({
                                   </button>
                                 )}
                               </SpreadsheetCell>
-                              <LinkCell
-                                href={item.googleMapsUrl}
-                                label={t("tripDetails.openGoogleMaps")}
-                              />
                               <SpreadsheetCell>
                                 {activeField === "notes" && draft ? (
                                   <>
@@ -1573,6 +1784,14 @@ export function TripSpreadsheetPage({
                                 </>
                               )}
                               {showWebsite && <SpreadsheetCell>{item.website}</SpreadsheetCell>}
+                              <SpreadsheetItemActions
+                                isBusy={isSaving}
+                                item={item}
+                                onChangeGoogleMapsUrl={(googleMapsUrl) =>
+                                  saveItemGoogleMapsUrl(type, item, googleMapsUrl)
+                                }
+                                onDelete={() => setPendingDeletion({ item, type })}
+                              />
                             </tr>
                           )
                         })
@@ -1602,6 +1821,32 @@ export function TripSpreadsheetPage({
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t("common.delete")}
+        isConfirming={isSaving}
+        isOpen={pendingDeletion !== null}
+        message={
+          pendingDeletion
+            ? pendingDeletion.type === "activity"
+              ? t("tripDetails.deleteActivityConfirmation", {
+                  name:
+                    pendingDeletion.item.title ??
+                    pendingDeletion.item.placeName ??
+                    t("tripDetails.untitledItem"),
+                })
+              : t("tripDetails.deleteMealConfirmation", {
+                  name:
+                    pendingDeletion.item.title ??
+                    pendingDeletion.item.placeName ??
+                    t("tripDetails.untitledItem"),
+                })
+            : ""
+        }
+        onCancel={() => setPendingDeletion(null)}
+        onConfirm={() => void confirmPendingDeletion()}
+        title={t("common.confirmDeletionTitle")}
+      />
     </section>
   )
 }
