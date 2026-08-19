@@ -47,6 +47,7 @@ import { TripSettings } from "./TripSettings"
 type TripSpreadsheetPageProps = {
   accessToken: string
   onTripDeleted: (trip: TripDetail) => Promise<void>
+  onReorderPendingChange: (isPending: boolean) => void
   onTripUpdated: (trip: TripDetail) => void
   trip: TripDetail
   showDetails: boolean
@@ -415,6 +416,7 @@ function SpreadsheetItemActions({
 export function TripSpreadsheetPage({
   accessToken,
   onTripDeleted,
+  onReorderPendingChange,
   onTripUpdated,
   trip,
   showDetails,
@@ -866,6 +868,9 @@ export function TripSpreadsheetPage({
 
   function queueReorder(optimisticTrip: TripDetail) {
     const reorderGeneration = ++reorderGenerationRef.current
+    if (pendingReorderCountRef.current === 0) {
+      onReorderPendingChange(true)
+    }
     pendingReorderCountRef.current += 1
     const queuedRequest = reorderQueueRef.current.then(() =>
       reorderDayItems(accessToken, optimisticTrip.id, getReorderInput(optimisticTrip)).then(
@@ -905,6 +910,9 @@ export function TripSpreadsheetPage({
       })
       .finally(() => {
         pendingReorderCountRef.current -= 1
+        if (pendingReorderCountRef.current === 0) {
+          onReorderPendingChange(false)
+        }
       })
   }
 

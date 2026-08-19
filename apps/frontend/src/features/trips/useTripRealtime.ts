@@ -56,7 +56,14 @@ export function useTripRealtime({
       }
 
       void getTrip(accessToken, tripId)
-        .then((nextTrip) => onTripUpdatedRef.current(nextTrip))
+        .then((nextTrip) => {
+          if (isPausedRef.current()) {
+            refreshTimer = window.setTimeout(refreshTrip, 300)
+            return
+          }
+
+          onTripUpdatedRef.current(nextTrip)
+        })
         .catch((reason: unknown) => {
           onErrorRef.current(getErrorMessage(reason))
         })

@@ -64,6 +64,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
   const [detailsError, setDetailsError] = useState<string | null>(null)
   const [showMobileOptions, setShowMobileOptions] = useState(false)
   const [showItemDetails, setShowItemDetails] = useState(getInitialShowItemDetails)
+  const [isDesktopReordering, setIsDesktopReordering] = useState(false)
   const daySelection = useTripDaySelection(selectedTrip)
 
   useEffect(() => {
@@ -137,7 +138,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
 
   useTripRealtime({
     accessToken: session.access_token,
-    isPaused: () => false,
+    isPaused: () => isDesktopReordering,
     onError: setDetailsError,
     onTripUpdated: handleTripUpdated,
     tripId:
@@ -343,6 +344,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
               <TripSpreadsheetPage
                 accessToken={session.access_token}
                 onTripDeleted={handleDeleteTrip}
+                onReorderPendingChange={setIsDesktopReordering}
                 onTripUpdated={handleTripUpdated}
                 showDetails={showItemDetails}
                 trip={selectedTrip}
