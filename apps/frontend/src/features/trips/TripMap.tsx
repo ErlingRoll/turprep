@@ -76,11 +76,15 @@ function getMarkerLabel(title: string) {
 }
 
 function markerColor(type: TripMapMarker["type"]) {
-  return {
-    activity: "#2d7f8a",
-    meal: "#7654a8",
-    housing: "#bd6c3d",
-  }[type]
+  const color = getComputedStyle(document.documentElement)
+    .getPropertyValue(`--color-type-${type}`)
+    .trim()
+
+  if (!color) {
+    throw new Error(`Missing map marker color for ${type}`)
+  }
+
+  return color
 }
 
 function markerIcon(marker: TripMapMarker): google.maps.Icon {

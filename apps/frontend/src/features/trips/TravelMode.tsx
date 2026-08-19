@@ -187,7 +187,9 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
       const stay = housingForDay.find((currentStay) => currentStay.id === marker.id)
 
       return stay ? (
-        <article className="rounded-xl bg-surface p-3">
+        <article
+          className="trip-item-type-housing rounded-xl bg-surface p-3"
+        >
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
             {t("travelMode.housing")}
           </p>
@@ -228,13 +230,17 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
     }
 
     return (
-      <article className="rounded-xl bg-surface p-3">
+      <article
+        className={`rounded-xl bg-surface p-3 ${
+          marker.type === "activity" ? "trip-item-type-activity" : "trip-item-type-meal"
+        }`}
+      >
         <div className="flex items-start gap-3">
           <div
             className={`grid min-w-16 place-items-center rounded-xl px-2 py-2 text-sm font-semibold ${
               marker.type === "activity"
-                ? "bg-brand-surface text-on-brand"
-                : "bg-accent text-on-accent"
+                ? "bg-activity-surface text-type-activity"
+                : "bg-meal-surface text-type-meal"
             }`}
           >
             {formatActivityTime(item, {
@@ -243,7 +249,11 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
             })}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+            <p
+              className={`text-xs font-semibold uppercase tracking-[0.16em] ${
+                marker.type === "activity" ? "text-type-activity" : "text-type-meal"
+              }`}
+            >
               {marker.type === "activity" ? t("tripDetails.activity") : t("travelMode.meal")}
             </p>
             <p className="mt-1 break-words font-semibold text-brand">
@@ -348,7 +358,7 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
               <div className="mt-4 grid gap-3">
                 {housingForDay.map((stay) => (
                   <article
-                    className={`min-w-0 overflow-hidden rounded-2xl border border-border bg-surface p-4 ${
+                    className={`trip-item-type-housing min-w-0 overflow-hidden rounded-2xl border border-border bg-surface p-4 ${
                       highlightedMapItemKey === `housing:${stay.id}` ? "trip-map-card-focus" : ""
                     }`}
                     data-trip-item-key={`housing:${stay.id}`}
@@ -382,38 +392,36 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
                 ))}
                 {mealsForDay.map((meal) => (
                   <article
-                    className={`min-w-0 rounded-2xl border border-border bg-surface p-4 ${
+                    className={`trip-item-type-meal min-w-0 rounded-2xl border border-border-card bg-surface p-4 ${
                       highlightedMapItemKey === `meal:${meal.id}` ? "trip-map-card-focus" : ""
                     }`}
                     data-trip-item-key={`meal:${meal.id}`}
                     key={meal.id}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 flex-1 items-start gap-3">
-                        <div className="grid min-w-16 place-items-center rounded-xl bg-accent px-2 py-2 text-sm font-semibold text-on-accent">
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-2 grid w-fit min-w-16 place-items-center rounded-xl bg-meal-surface px-2 py-2 text-sm font-semibold text-type-meal">
                           {formatActivityTime(meal, {
                             allDay: t("tripDetails.allDay"),
                             timeNotSet: t("tripDetails.timeNotSet"),
                           })}
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
-                            {t("travelMode.meal")}
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-type-meal">
+                          {t("travelMode.meal")}
+                        </p>
+                        <h3 className="mt-1 break-words font-semibold text-brand">
+                          {getDayItemTitle(meal, t("tripDetails.untitledItem"))}
+                        </h3>
+                        {meal.notes?.trim() && (
+                          <p className="mt-2 break-words whitespace-pre-wrap text-sm text-muted">
+                            {meal.notes}
                           </p>
-                          <h3 className="mt-1 break-words font-semibold text-brand">
-                            {getDayItemTitle(meal, t("tripDetails.untitledItem"))}
-                          </h3>
-                          {meal.notes?.trim() && (
-                            <p className="mt-2 break-words whitespace-pre-wrap text-sm text-muted">
-                              {meal.notes}
-                            </p>
-                          )}
-                          <ItemDetailsDisplay
-                            details={meal}
-                            showPrice={itemDetailVisibility.showPrice}
-                            showWebsite={itemDetailVisibility.showWebsite}
-                          />
-                        </div>
+                        )}
+                        <ItemDetailsDisplay
+                          details={meal}
+                          showPrice={itemDetailVisibility.showPrice}
+                          showWebsite={itemDetailVisibility.showWebsite}
+                        />
                       </div>
                       {meal.latitude !== null && meal.longitude !== null && (
                         <MapLocateButton
@@ -435,7 +443,7 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
               ) : (
                 sortActivities(selectedDay.activities).map((activity) => (
                   <article
-                    className={`min-w-0 rounded-2xl border border-border-card bg-surface p-4 ${
+                    className={`trip-item-type-activity min-w-0 rounded-2xl border border-border-card bg-surface p-4 ${
                       highlightedMapItemKey === `activity:${activity.id}`
                         ? "trip-map-card-focus"
                         : ""
@@ -444,43 +452,41 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
                     key={activity.id}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 flex-1 items-start gap-3">
-                        <div className="grid min-w-16 place-items-center rounded-xl bg-brand-surface px-2 py-2 text-sm font-semibold text-on-brand">
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-2 grid w-fit min-w-16 place-items-center rounded-xl bg-activity-surface px-2 py-2 text-sm font-semibold text-type-activity">
                           {formatActivityTime(activity, {
                             allDay: t("tripDetails.allDay"),
                             timeNotSet: t("tripDetails.timeNotSet"),
                           })}
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <h3 className="break-words font-semibold text-brand">
-                            {getDayItemTitle(activity, t("tripDetails.untitledItem"))}
-                          </h3>
-                          {activity.placeAddress && (
-                            <p className="mt-1 break-words text-sm text-muted">
-                              {activity.placeAddress}
-                            </p>
-                          )}
-                          {activity.notes?.trim() && (
-                            <p className="mt-2 break-words whitespace-pre-wrap text-sm text-muted">
-                              {activity.notes}
-                            </p>
-                          )}
-                          <ItemDetailsDisplay
-                            details={activity}
-                            showPrice={itemDetailVisibility.showPrice}
-                            showWebsite={itemDetailVisibility.showWebsite}
-                          />
-                          {activity.googleMapsUrl && (
-                            <a
-                              className="mt-3 inline-flex rounded-lg bg-surface-muted px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-soft"
-                              href={activity.googleMapsUrl}
-                              rel="noreferrer"
-                              target="_blank"
-                            >
-                              {t("tripDetails.openGoogleMaps")}
-                            </a>
-                          )}
-                        </div>
+                        <h3 className="break-words font-semibold text-brand">
+                          {getDayItemTitle(activity, t("tripDetails.untitledItem"))}
+                        </h3>
+                        {activity.placeAddress && (
+                          <p className="mt-1 break-words text-sm text-muted">
+                            {activity.placeAddress}
+                          </p>
+                        )}
+                        {activity.notes?.trim() && (
+                          <p className="mt-2 break-words whitespace-pre-wrap text-sm text-muted">
+                            {activity.notes}
+                          </p>
+                        )}
+                        <ItemDetailsDisplay
+                          details={activity}
+                          showPrice={itemDetailVisibility.showPrice}
+                          showWebsite={itemDetailVisibility.showWebsite}
+                        />
+                        {activity.googleMapsUrl && (
+                          <a
+                            className="mt-3 inline-flex rounded-lg bg-surface-muted px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-soft"
+                            href={activity.googleMapsUrl}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            {t("tripDetails.openGoogleMaps")}
+                          </a>
+                        )}
                       </div>
                       {activity.latitude !== null && activity.longitude !== null && (
                         <MapLocateButton
