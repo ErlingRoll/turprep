@@ -160,7 +160,7 @@ export function SpreadsheetItineraryRow({
             </colgroup>
             <tbody>
               <tr className="group-hover:bg-surface-soft">
-                <SpreadsheetCell className="border-b-0 text-base font-semibold">
+                <SpreadsheetCell className="border-b-0 text-base font-semibold text-brand">
                   {formatDate(item.tripDate ?? dayDate)}
                 </SpreadsheetCell>
                 <SpreadsheetCell className="border-b-0 text-base font-semibold">
@@ -181,7 +181,7 @@ export function SpreadsheetItineraryRow({
                     </>
                   ) : (
                     <button
-                      className={`w-full cursor-text text-left underline decoration-2 underline-offset-4 transition hover:text-brand ${
+                      className={`w-full cursor-text text-left text-on-surface underline decoration-2 underline-offset-4 transition hover:text-brand ${
                         type === "activity"
                           ? "decoration-type-activity"
                           : "decoration-type-meal"

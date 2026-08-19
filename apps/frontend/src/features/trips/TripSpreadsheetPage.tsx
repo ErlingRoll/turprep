@@ -16,6 +16,7 @@ import {
   deleteHousingStay,
   deleteMeal,
   updateActivity,
+  updateTripDay,
   getTrip,
   updateHousingStay,
   updateMeal,
@@ -235,6 +236,10 @@ export function TripSpreadsheetPage({
   const [savingPreferenceKey, setSavingPreferenceKey] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [reorderError, setReorderError] = useState<string | null>(null)
+  const [editingDayTitleDate, setEditingDayTitleDate] = useState<string | null>(null)
+  const [dayTitleDraft, setDayTitleDraft] = useState("")
+  const [dayTitleError, setDayTitleError] = useState<string | null>(null)
+  const [isSavingDayTitle, setIsSavingDayTitle] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const tableRef = useRef<HTMLTableElement>(null)
   const dropTargetRef = useRef<SpreadsheetDropTarget | null>(null)
@@ -364,6 +369,40 @@ export function TripSpreadsheetPage({
         ? candidate
         : nearest
     }, null)
+  }
+
+  function startEditingDayTitle(day: TripDetail["days"][number]) {
+    setEditingDayTitleDate(day.date)
+    setDayTitleDraft(day.title ?? "")
+    setDayTitleError(null)
+  }
+
+  function cancelEditingDayTitle() {
+    setEditingDayTitleDate(null)
+    setDayTitleDraft("")
+    setDayTitleError(null)
+  }
+
+  async function saveDayTitle(date: string) {
+    setIsSavingDayTitle(true)
+    setDayTitleError(null)
+
+    try {
+      const updatedDay = await updateTripDay(accessToken, trip.id, date, {
+        title: dayTitleDraft.trim() || null,
+      })
+      onTripUpdated({
+        ...trip,
+        days: trip.days.map((day) =>
+          day.date === date ? { ...day, title: updatedDay.title } : day,
+        ),
+      })
+      cancelEditingDayTitle()
+    } catch (reason: unknown) {
+      setDayTitleError(getErrorMessage(reason))
+    } finally {
+      setIsSavingDayTitle(false)
+    }
   }
 
   function getReorderInput(nextTrip: TripDetail): ReorderDayItemInput[] {
@@ -1390,10 +1429,64 @@ export function TripSpreadsheetPage({
                           colSpan={itineraryColumnCount}
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span>
-                              {formatDate(day.date)}
-                              {day.title?.trim() ? ` Â· ${day.title}` : ""}
-                            </span>
+                            {editingDayTitleDate === day.date ? (
+                              <form
+                                className="flex min-w-0 flex-1 flex-wrap items-center gap-2"
+                                onSubmit={(event) => {
+                                  event.preventDefault()
+                                  void saveDayTitle(day.date)
+                                }}
+                              >
+                                <span className="shrink-0 text-brand">{formatDate(day.date)}</span>
+                                <input
+                                  aria-label={t("tripDetails.dayTitle")}
+                                  autoFocus
+                                  className="min-w-48 flex-1 rounded-lg border border-border bg-surface px-2 py-1.5 text-sm font-normal text-on-surface outline-none focus:border-brand"
+                                  disabled={isSavingDayTitle}
+                                  maxLength={200}
+                                  onChange={(event) => setDayTitleDraft(event.target.value)}
+                                  placeholder={t("tripDetails.dayTitlePlaceholder")}
+                                  type="text"
+                                  value={dayTitleDraft}
+                                />
+                                <button
+                                  className="rounded-lg bg-brand-surface px-2 py-1 text-xs font-semibold text-on-brand disabled:opacity-50"
+                                  disabled={isSavingDayTitle}
+                                  type="submit"
+                                >
+                                  {isSavingDayTitle ? t("common.saving") : t("common.save")}
+                                </button>
+                                <button
+                                  className="rounded-lg border border-border px-2 py-1 text-xs font-semibold text-muted hover:bg-surface-muted hover:text-on-surface disabled:opacity-50"
+                                  disabled={isSavingDayTitle}
+                                  onClick={cancelEditingDayTitle}
+                                  type="button"
+                                >
+                                  {t("common.cancel")}
+                                </button>
+                                {dayTitleError && (
+                                  <p className="basis-full text-xs font-normal text-error">
+                                    {dayTitleError}
+                                  </p>
+                                )}
+                              </form>
+                            ) : (
+                              <div className="flex min-w-0 flex-1 items-baseline gap-1">
+                                <span className="shrink-0 text-brand">{formatDate(day.date)}</span>
+                                <button
+                                  className={`min-w-0 break-words text-left font-semibold ${
+                                    day.title?.trim()
+                                      ? "text-on-surface hover:text-brand"
+                                      : "text-muted hover:text-brand"
+                                  }`}
+                                  onClick={() => startEditingDayTitle(day)}
+                                  type="button"
+                                >
+                                  {"\u00b7 "}
+                                  {day.title?.trim() || t("tripDetails.dayTitle")}
+                                </button>
+                              </div>
+                            )}
                             <span className="flex flex-wrap gap-2 normal-case tracking-normal">
                               <button
                                 className="rounded-lg border border-border px-2 py-1 text-xs font-semibold text-muted hover:border-brand hover:text-brand disabled:opacity-50"

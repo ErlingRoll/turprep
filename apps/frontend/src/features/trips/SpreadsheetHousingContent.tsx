@@ -127,7 +127,7 @@ export function SpreadsheetHousingContent({
           </>
         ) : (
           <button
-            className="w-full min-w-0 cursor-text break-words pr-10 text-left font-semibold leading-tight text-brand transition hover:text-brand"
+            className="w-full min-w-0 cursor-text break-words pr-10 text-left font-semibold leading-tight text-on-surface transition hover:text-brand"
             onClick={() => onStartEditing("name")}
             type="button"
           >
@@ -147,7 +147,7 @@ export function SpreadsheetHousingContent({
           </>
         ) : (
           <button
-            className="w-full cursor-text text-left text-xs text-muted transition hover:text-brand"
+            className="w-full cursor-text text-left text-xs text-brand transition hover:text-brand"
             onClick={() => onStartEditing("checkIn")}
             type="button"
           >
@@ -167,7 +167,7 @@ export function SpreadsheetHousingContent({
           </>
         ) : (
           <button
-            className="w-full cursor-text text-left text-xs text-muted transition hover:text-brand"
+            className="w-full cursor-text text-left text-xs text-brand transition hover:text-brand"
             onClick={() => onStartEditing("checkOut")}
             type="button"
           >
