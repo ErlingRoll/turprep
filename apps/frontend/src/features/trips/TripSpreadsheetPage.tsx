@@ -1409,7 +1409,7 @@ export function TripSpreadsheetPage({
               <colgroup>
                 <col className="w-52" />
                 <col className="w-30" />
-                <col className="w-48" />
+                <col className="w-56" />
                 <col className="w-16" />
                 <col className="w-16" />
                 {showPrice && (
@@ -1793,7 +1793,7 @@ export function TripSpreadsheetPage({
                                   <table className="min-w-full table-fixed border-collapse text-left">
                                     <colgroup>
                                       <col className="w-30" />
-                                      <col className="w-48" />
+                                      <col className="w-56" />
                                       <col className="w-16" />
                                       <col className="w-16" />
                                       {showPrice && (
@@ -1807,10 +1807,10 @@ export function TripSpreadsheetPage({
                                     </colgroup>
                                     <tbody>
                                       <tr className="group-hover:bg-surface-soft">
-                              <SpreadsheetCell className="border-b-0">
+                              <SpreadsheetCell className="border-b-0 text-base font-semibold">
                                 {formatDate(item.tripDate ?? day.date)}
                               </SpreadsheetCell>
-                              <SpreadsheetCell className="border-b-0">
+                              <SpreadsheetCell className="border-b-0 text-base font-semibold">
                                 {activeField === "title" && draft ? (
                                   <>
                                     <input
