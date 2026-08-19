@@ -96,8 +96,6 @@ const resources = {
         price: "Pris",
         prototype: "Prototype",
         readOnlyDescription: "Rediger aktiviteter og måltider direkte i planen.",
-        moveDown: "Flytt ned",
-        moveUp: "Flytt opp",
         reorderTimeRangeError:
           "Kan ikke flytte elementet uten å lage en ugyldig tidsperiode på denne dagen.",
         rows: "{{count}} rader",
@@ -451,8 +449,6 @@ const resources = {
         price: "Price",
         prototype: "Prototype",
         readOnlyDescription: "Edit activities and meals directly in the plan.",
-        moveDown: "Move down",
-        moveUp: "Move up",
         reorderTimeRangeError: "The item cannot move without creating an invalid time range.",
         rows: "{{count}} rows",
         start: "Start",

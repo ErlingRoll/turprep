@@ -1,7 +1,8 @@
-import { Fragment, useState, type ReactNode } from "react"
+import { Fragment, useEffect, useRef, useState, type DragEvent, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import {
   updateActivity,
+  getTrip,
   updateHousingStay,
   updateMeal,
   reorderDayItems,
@@ -68,6 +69,17 @@ function formatHousingPrice(amount: number, currency: string, locale: string) {
 type ItineraryRow = {
   item: Activity | Meal
   type: "activity" | "meal"
+}
+
+type SpreadsheetDropTarget = {
+  dayDate: string
+  index: number
+}
+
+type SpreadsheetDraggedItem = {
+  dayDate: string
+  itemId: string
+  itemType: ItineraryRow["type"]
 }
 
 type ItemDraft = {
@@ -155,6 +167,20 @@ function rebaseItemTime(item: Activity | Meal, startTime: string): ItemTimeUpdat
   }
 }
 
+function getItineraryRowKey(row: ItineraryRow) {
+  return `${row.type}:${row.item.id}`
+}
+
+function getDropIndex(event: DragEvent<HTMLTableRowElement>, itemIndex: number) {
+  const bounds = event.currentTarget.getBoundingClientRect()
+  return event.clientY >= bounds.top + bounds.height / 2 ? itemIndex + 1 : itemIndex
+}
+
+function isDragBlockedTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement &&
+    Boolean(target.closest("button, input, select, textarea, [contenteditable='true']"))
+}
+
 function getItineraryRows(trip: TripDetail, date: string): ItineraryRow[] {
   const day = trip.days.find((currentDay) => currentDay.date === date)
   const meals = trip.meals.filter((meal) => !meal.isBackup && meal.tripDate === date)
@@ -204,10 +230,15 @@ export function TripSpreadsheetPage({
   const [housingEditingKey, setHousingEditingKey] = useState<string | null>(null)
   const [housingDraft, setHousingDraft] = useState<HousingDraft | null>(null)
   const [isSaving, setIsSaving] = useState(false)
-  const [isReordering, setIsReordering] = useState(false)
+  const [draggedItem, setDraggedItem] = useState<SpreadsheetDraggedItem | null>(null)
+  const [dropTarget, setDropTarget] = useState<SpreadsheetDropTarget | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [reorderError, setReorderError] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
+  const latestTripRef = useRef(trip)
+  const reorderQueueRef = useRef(Promise.resolve())
+  const pendingReorderCountRef = useRef(0)
+  const reorderGenerationRef = useRef(0)
   const showPrice = showDetails && trip.itemDetailVisibility.showPrice
   const showWebsite = showDetails && trip.itemDetailVisibility.showWebsite
   const currencies =
@@ -239,6 +270,12 @@ export function TripSpreadsheetPage({
   }
   const itineraryColumnCount = 7 + (showPrice ? 2 : 0) + (showWebsite ? 1 : 0)
 
+  useEffect(() => {
+    if (pendingReorderCountRef.current === 0) {
+      latestTripRef.current = trip
+    }
+  }, [trip])
+
   function getReorderInput(nextTrip: TripDetail): ReorderDayItemInput[] {
     return nextTrip.days.flatMap((day) =>
       getItineraryRows(nextTrip, day.date).map(({ item, type }, sortOrder) => ({
@@ -252,87 +289,285 @@ export function TripSpreadsheetPage({
     )
   }
 
-  async function moveItineraryItem(dayDate: string, itemIndex: number, direction: -1 | 1) {
-    if (isReordering) {
-      return
-    }
+  function getOptimisticReorderedTrip(
+    baseTrip: TripDetail,
+    rowsByDate: Map<string, ItineraryRow[]>,
+    timeUpdates: Map<string, ItemTimeUpdate>,
+  ): TripDetail {
+    const rowByItemKey = new Map<
+      string,
+      { dayDate: string; row: ItineraryRow; sortOrder: number }
+    >()
 
-    const rows = getItineraryRows(trip, dayDate)
-    const targetIndex = itemIndex + direction
-    if (targetIndex < 0 || targetIndex >= rows.length) {
-      return
-    }
+    rowsByDate.forEach((rows, dayDate) => {
+      rows.forEach((row, sortOrder) => {
+        rowByItemKey.set(getItineraryRowKey(row), { dayDate, row, sortOrder })
+      })
+    })
 
-    const movedRow = rows[itemIndex]
-    const targetRow = rows[targetIndex]
-    const movedAnchor = getTimeAnchor(movedRow.item)
-    const targetAnchor = getTimeAnchor(targetRow.item)
-    const timeUpdates = new Map<string, ItemTimeUpdate>()
+    return {
+      ...baseTrip,
+      days: baseTrip.days.map((day) => {
+        const rows = rowsByDate.get(day.date)
+        if (!rows) {
+          return day
+        }
 
-    if (movedAnchor && targetAnchor) {
-      const movedTime = rebaseItemTime(movedRow.item, targetAnchor)
-      const targetTime = rebaseItemTime(targetRow.item, movedAnchor)
-
-      if (!movedTime || !targetTime) {
-        setReorderError(t("spreadsheet.reorderTimeRangeError"))
-        return
-      }
-
-      timeUpdates.set(`${movedRow.type}:${movedRow.item.id}`, movedTime)
-      timeUpdates.set(`${targetRow.type}:${targetRow.item.id}`, targetTime)
-    }
-
-    const reorderedRows = [...rows]
-    reorderedRows.splice(itemIndex, 1)
-    reorderedRows.splice(targetIndex, 0, movedRow)
-    const sortOrderByItemId = new Map(
-      reorderedRows.map(({ item }, sortOrder) => [item.id, sortOrder]),
-    )
-    const optimisticTrip: TripDetail = {
-      ...trip,
-      days: trip.days.map((day) =>
-        day.date === dayDate
-          ? {
-              ...day,
-              activities: day.activities.map((activity) => {
-                const sortOrder = sortOrderByItemId.get(activity.id)
-                const timeUpdate = timeUpdates.get(`activity:${activity.id}`)
-                return {
-                  ...activity,
-                  ...(sortOrder === undefined ? {} : { sortOrder }),
-                  ...(timeUpdate ?? {}),
-                }
-              }),
-            }
-          : day,
-      ),
-      meals: trip.meals.map((meal) => {
-        if (meal.tripDate !== dayDate) {
+        return {
+          ...day,
+          activities: rows.flatMap((row, sortOrder) =>
+            row.type === "activity"
+              ? [
+                  {
+                    ...row.item,
+                    tripDate: day.date,
+                    sortOrder,
+                    ...(timeUpdates.get(getItineraryRowKey(row)) ?? {}),
+                  },
+                ]
+              : [],
+          ),
+        }
+      }),
+      meals: baseTrip.meals.map((meal) => {
+        const placement = rowByItemKey.get(`meal:${meal.id}`)
+        if (!placement) {
           return meal
         }
 
-        const sortOrder = sortOrderByItemId.get(meal.id)
-        const timeUpdate = timeUpdates.get(`meal:${meal.id}`)
         return {
           ...meal,
-          ...(sortOrder === undefined ? {} : { sortOrder }),
-          ...(timeUpdate ?? {}),
+          tripDate: placement.dayDate,
+          sortOrder: placement.sortOrder,
+          ...(timeUpdates.get(`meal:${meal.id}`) ?? {}),
         }
       }),
     }
+  }
 
-    setIsReordering(true)
-    setReorderError(null)
-    onTripUpdated(optimisticTrip)
-
-    try {
-      await reorderDayItems(accessToken, trip.id, getReorderInput(optimisticTrip))
-    } catch (reason: unknown) {
-      setReorderError(getErrorMessage(reason))
-      onTripUpdated(trip)
-    } finally {
-      setIsReordering(false)
+  function handleSpreadsheetDragStart(
+    event: DragEvent<HTMLTableRowElement>,
+    dayDate: string,
+    row: ItineraryRow,
+  ) {
+    if (isDragBlockedTarget(event.target)) {
+      event.preventDefault()
+      return
     }
+
+    event.dataTransfer.effectAllowed = "move"
+    event.dataTransfer.setData("text/plain", getItineraryRowKey(row))
+    const dragPreview = document.createElement("div")
+    dragPreview.className =
+      "pointer-events-none fixed z-50 rounded-lg border border-brand bg-surface px-3 py-2 text-sm font-semibold text-on-surface shadow-lg"
+    dragPreview.textContent = `${row.type === "activity" ? t("spreadsheet.activity") : t("spreadsheet.meal")} · ${getDayItemTitle(
+      row.item,
+      t("tripDetails.untitledItem"),
+    )}`
+    dragPreview.style.left = "-1000px"
+    dragPreview.style.top = "-1000px"
+    document.body.appendChild(dragPreview)
+    event.dataTransfer.setDragImage(dragPreview, 16, 16)
+    window.setTimeout(() => dragPreview.remove(), 0)
+    setDraggedItem({
+      dayDate,
+      itemId: row.item.id,
+      itemType: row.type,
+    })
+    setReorderError(null)
+  }
+
+  function handleSpreadsheetDragOver(
+    event: DragEvent<HTMLTableRowElement>,
+    dayDate: string,
+    itemIndex: number,
+  ) {
+    if (!draggedItem) {
+      return
+    }
+
+    event.preventDefault()
+    event.dataTransfer.dropEffect = "move"
+    const nextDropTarget = {
+      dayDate,
+      index: getDropIndex(event, itemIndex),
+    }
+    setDropTarget((currentTarget) =>
+      currentTarget?.dayDate === nextDropTarget.dayDate &&
+      currentTarget.index === nextDropTarget.index
+        ? currentTarget
+        : nextDropTarget,
+    )
+  }
+
+  function handleSpreadsheetDragEnd() {
+    setDraggedItem(null)
+    setDropTarget(null)
+  }
+
+  function queueReorder(optimisticTrip: TripDetail) {
+    const reorderGeneration = ++reorderGenerationRef.current
+    pendingReorderCountRef.current += 1
+    const queuedRequest = reorderQueueRef.current.then(() =>
+      reorderDayItems(accessToken, optimisticTrip.id, getReorderInput(optimisticTrip)).then(
+        () => undefined,
+      ),
+    )
+    reorderQueueRef.current = queuedRequest.catch(() => undefined)
+
+    void queuedRequest
+      .then(() => {
+        if (reorderGeneration === reorderGenerationRef.current) {
+          setReorderError(null)
+        }
+      })
+      .catch(async (reason: unknown) => {
+        setReorderError(getErrorMessage(reason))
+
+        if (
+          pendingReorderCountRef.current > 1 ||
+          reorderGeneration !== reorderGenerationRef.current
+        ) {
+          return
+        }
+
+        try {
+          const refreshedTrip = await getTrip(accessToken, optimisticTrip.id)
+          latestTripRef.current = refreshedTrip
+          if (
+            pendingReorderCountRef.current === 1 &&
+            reorderGeneration === reorderGenerationRef.current
+          ) {
+            onTripUpdated(refreshedTrip)
+          }
+        } catch (refreshReason: unknown) {
+          setReorderError(`${getErrorMessage(reason)} ${getErrorMessage(refreshReason)}`)
+        }
+      })
+      .finally(() => {
+        pendingReorderCountRef.current -= 1
+      })
+  }
+
+  async function handleSpreadsheetDrop(
+    event: DragEvent<HTMLTableRowElement>,
+    targetDate: string,
+    rawTargetIndex: number,
+  ) {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const draggedItemKey = draggedItem
+      ? `${draggedItem.itemType}:${draggedItem.itemId}`
+      : event.dataTransfer.getData("text/plain")
+    setDraggedItem(null)
+    setDropTarget(null)
+
+    if (!draggedItemKey) {
+      return
+    }
+
+    const currentTrip = latestTripRef.current
+    const sourceDate =
+      draggedItem?.dayDate ??
+      currentTrip.days.find((day) =>
+        getItineraryRows(currentTrip, day.date).some(
+          (row) => getItineraryRowKey(row) === draggedItemKey,
+        ),
+      )?.date
+    const sourceRows = sourceDate ? getItineraryRows(currentTrip, sourceDate) : []
+    const sourceIndex = sourceRows.findIndex(
+      (row) => getItineraryRowKey(row) === draggedItemKey,
+    )
+    const targetRows = getItineraryRows(currentTrip, targetDate)
+
+    if (!sourceDate || sourceIndex < 0) {
+      return
+    }
+
+    const isSameDay = sourceDate === targetDate
+    const targetRowsWithoutDraggedItem = targetRows.filter(
+      (row) => getItineraryRowKey(row) !== draggedItemKey,
+    )
+    const adjustedTargetIndex =
+      isSameDay && sourceIndex < rawTargetIndex ? rawTargetIndex - 1 : rawTargetIndex
+    const insertionIndex = Math.max(
+      0,
+      Math.min(adjustedTargetIndex, targetRowsWithoutDraggedItem.length),
+    )
+    const movedRow = sourceRows[sourceIndex]
+    const nextTargetRows = [
+      ...targetRowsWithoutDraggedItem.slice(0, insertionIndex),
+      movedRow,
+      ...targetRowsWithoutDraggedItem.slice(insertionIndex),
+    ]
+    const finalIndex = insertionIndex
+
+    if (isSameDay && finalIndex === sourceIndex) {
+      return
+    }
+
+    const timeUpdates = new Map<string, ItemTimeUpdate>()
+
+    if (isSameDay) {
+      const segmentStart = Math.min(sourceIndex, finalIndex)
+      const segmentEnd = Math.max(sourceIndex, finalIndex)
+      const originalTimedRows = sourceRows
+        .slice(segmentStart, segmentEnd + 1)
+        .filter((row) => getTimeAnchor(row.item) !== null)
+      const reorderedTimedRows = nextTargetRows
+        .slice(segmentStart, segmentEnd + 1)
+        .filter((row) => getTimeAnchor(row.item) !== null)
+      const originalTimeSlots = originalTimedRows
+        .map((row) => getTimeAnchor(row.item))
+        .filter((time): time is string => time !== null)
+
+      for (const [index, row] of reorderedTimedRows.entries()) {
+        const timeUpdate = rebaseItemTime(row.item, originalTimeSlots[index])
+        if (!timeUpdate) {
+          setReorderError(t("spreadsheet.reorderTimeRangeError"))
+          return
+        }
+
+        timeUpdates.set(getItineraryRowKey(row), timeUpdate)
+      }
+    } else {
+      timeUpdates.set(getItineraryRowKey(movedRow), {
+        endTime: null,
+        startTime: null,
+      })
+    }
+
+    const rowsByDate = new Map<string, ItineraryRow[]>()
+    if (isSameDay) {
+      rowsByDate.set(sourceDate, nextTargetRows)
+    } else {
+      rowsByDate.set(sourceDate, sourceRows.filter((row) => getItineraryRowKey(row) !== draggedItemKey))
+      rowsByDate.set(targetDate, nextTargetRows)
+    }
+
+    const optimisticTrip = getOptimisticReorderedTrip(currentTrip, rowsByDate, timeUpdates)
+    setReorderError(null)
+    latestTripRef.current = optimisticTrip
+    queueReorder(optimisticTrip)
+    onTripUpdated(optimisticTrip)
+  }
+
+  function handleSpreadsheetDayDragOver(event: DragEvent<HTMLTableRowElement>, dayDate: string) {
+    if (!draggedItem) {
+      return
+    }
+
+    event.preventDefault()
+    event.dataTransfer.dropEffect = "move"
+    setDropTarget({ dayDate, index: 0 })
+  }
+
+  async function handleSpreadsheetDayDrop(
+    event: DragEvent<HTMLTableRowElement>,
+    dayDate: string,
+  ) {
+    await handleSpreadsheetDrop(event, dayDate, 0)
   }
 
   function startEditing(type: ItineraryRow["type"], item: Activity | Meal, field: EditableField) {
@@ -622,7 +857,11 @@ export function TripSpreadsheetPage({
 
                   return (
                     <Fragment key={day.date}>
-                      <tr className="bg-page">
+                      <tr
+                        className="bg-page"
+                        onDragOver={(event) => handleSpreadsheetDayDragOver(event, day.date)}
+                        onDrop={(event) => void handleSpreadsheetDayDrop(event, day.date)}
+                      >
                         {startsHousingBlock && (
                           <td
                             className="border-b border-r border-border-divider bg-surface-soft p-3 align-top"
@@ -864,7 +1103,15 @@ export function TripSpreadsheetPage({
                         </th>
                       </tr>
                       {rows.length === 0 ? (
-                        <tr>
+                        <tr
+                          className={
+                            dropTarget?.dayDate === day.date && dropTarget.index === 0
+                              ? "border-y-4 border-brand bg-surface-muted"
+                              : ""
+                          }
+                          onDragOver={(event) => handleSpreadsheetDayDragOver(event, day.date)}
+                          onDrop={(event) => void handleSpreadsheetDayDrop(event, day.date)}
+                        >
                           <td
                             className="border-b border-border-divider px-3 py-2 text-sm text-muted"
                             colSpan={itineraryColumnCount}
@@ -878,6 +1125,10 @@ export function TripSpreadsheetPage({
                           const activeField = editingFieldKey?.startsWith(`${itemKey}:`)
                             ? (editingFieldKey.slice(itemKey.length + 1) as EditableField)
                             : null
+                          const isDropBefore =
+                            dropTarget?.dayDate === day.date && dropTarget.index === itemIndex
+                          const isDropAfter =
+                            dropTarget?.dayDate === day.date && dropTarget.index === itemIndex + 1
                           const renderActions = (field: EditableField) => (
                             <div className="mt-2 flex flex-wrap gap-2">
                               <button
@@ -903,7 +1154,36 @@ export function TripSpreadsheetPage({
                           )
 
                           return (
-                            <tr className="hover:bg-surface-soft" key={itemKey}>
+                            <tr
+                              className={`hover:bg-surface-soft ${
+                                isDropBefore
+                                  ? "border-t-4 border-brand bg-surface-muted"
+                                  : ""
+                              } ${
+                                isDropAfter
+                                  ? "border-b-4 border-brand bg-surface-muted"
+                                  : ""
+                              }`}
+                              draggable
+                              key={itemKey}
+                              onDragOver={(event) =>
+                                handleSpreadsheetDragOver(event, day.date, itemIndex)
+                              }
+                              onDragEnd={handleSpreadsheetDragEnd}
+                              onDragStart={(event) =>
+                                handleSpreadsheetDragStart(event, day.date, {
+                                  item,
+                                  type,
+                                })
+                              }
+                              onDrop={(event) =>
+                                void handleSpreadsheetDrop(
+                                  event,
+                                  day.date,
+                                  getDropIndex(event, itemIndex),
+                                )
+                              }
+                            >
                               <SpreadsheetCell>
                                 {formatLongDate(item.tripDate ?? day.date)}
                               </SpreadsheetCell>
@@ -919,32 +1199,6 @@ export function TripSpreadsheetPage({
                                     {type === "activity"
                                       ? t("spreadsheet.activity")
                                       : t("spreadsheet.meal")}
-                                  </span>
-                                  <span className="flex shrink-0 gap-1">
-                                    <button
-                                      aria-label={t("spreadsheet.moveUp")}
-                                      className="rounded border border-border px-1.5 py-0.5 text-xs text-muted hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
-                                      disabled={isReordering || itemIndex === 0}
-                                      onClick={() =>
-                                        void moveItineraryItem(day.date, itemIndex, -1)
-                                      }
-                                      type="button"
-                                    >
-                                      ↑
-                                    </button>
-                                    <button
-                                      aria-label={t("spreadsheet.moveDown")}
-                                      className="rounded border border-border px-1.5 py-0.5 text-xs text-muted hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
-                                      disabled={
-                                        isReordering || itemIndex === rows.length - 1
-                                      }
-                                      onClick={() =>
-                                        void moveItineraryItem(day.date, itemIndex, 1)
-                                      }
-                                      type="button"
-                                    >
-                                      ↓
-                                    </button>
                                   </span>
                                 </span>
                               </SpreadsheetCell>
