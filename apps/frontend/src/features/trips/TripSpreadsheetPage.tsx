@@ -1791,13 +1791,35 @@ export function TripSpreadsheetPage({
                             rowSpan={getHousingRowSpan(dayIndex)}
                           >
                             {housing ? (
-                              <div className="space-y-2">
+                              <div className="relative space-y-2">
+                                <button
+                                  aria-label={t("common.delete")}
+                                  className="absolute right-0 top-0 rounded-lg border border-border p-1.5 text-error hover:bg-danger-surface"
+                                  onClick={() => setPendingDeletion({ housing })}
+                                  title={t("common.delete")}
+                                  type="button"
+                                >
+                                  <svg
+                                    aria-hidden="true"
+                                    className="size-4"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      d="M4 7h16m-10 4v6m4-6v6M9 7V5h6v2m-9 0 1 12h10l1-12"
+                                      stroke="currentColor"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth="1.8"
+                                    />
+                                  </svg>
+                                </button>
                                 {activeHousingField === "name" && housingDraft ? (
                                   <>
                                     <input
                                       aria-label={t("tripDetails.housingName")}
                                       autoFocus
-                                      className="w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
+                                      className="w-full rounded-lg border border-border bg-surface px-2 py-1.5 pr-10 text-sm text-on-surface outline-none focus:border-brand"
                                       onChange={(event) =>
                                         setHousingDraft((current) =>
                                           current
@@ -1811,7 +1833,7 @@ export function TripSpreadsheetPage({
                                   </>
                                 ) : (
                                   <button
-                                    className="w-full cursor-text text-left font-semibold leading-tight text-brand transition hover:text-brand"
+                                    className="w-full min-w-0 cursor-text break-words pr-10 text-left font-semibold leading-tight text-brand transition hover:text-brand"
                                     onClick={() => startHousingEditing(housing, "name")}
                                     type="button"
                                   >
@@ -1866,6 +1888,15 @@ export function TripSpreadsheetPage({
                                       : t("tripDetails.checkOut")}
                                   </button>
                                 )}
+                                {housing.googleMapsUrl &&
+                                  isAllowedGoogleMapsUrl(housing.googleMapsUrl) && (
+                                    <div className="grid justify-items-start">
+                                      <GoogleMapsLinkButton
+                                        href={housing.googleMapsUrl}
+                                        label={t("tripDetails.openGoogleMaps")}
+                                      />
+                                    </div>
+                                  )}
                                 {activeHousingField === "notes" && housingDraft ? (
                                   <>
                                     <textarea
@@ -1885,20 +1916,13 @@ export function TripSpreadsheetPage({
                                   </>
                                 ) : (
                                   <button
-                                    className="w-full cursor-text whitespace-pre-wrap text-left text-sm text-muted transition hover:text-brand"
+                                    className="inline-block max-w-full min-h-5 w-full cursor-text whitespace-pre-wrap break-words text-left text-sm text-muted transition hover:text-brand"
                                     onClick={() => startHousingEditing(housing, "notes")}
                                     type="button"
                                   >
-                                    {housing.notes?.trim() || t("tripDetails.notes")}
+                                    {housing.notes?.trim() || t("spreadsheet.addNote")}
                                   </button>
                                 )}
-                                {housing.googleMapsUrl &&
-                                  isAllowedGoogleMapsUrl(housing.googleMapsUrl) && (
-                                    <GoogleMapsLinkButton
-                                      href={housing.googleMapsUrl}
-                                      label={t("tripDetails.openGoogleMaps")}
-                                    />
-                                  )}
                                 {showPrice && (
                                   <div className="mt-2 grid gap-1 text-sm text-muted">
                                     {activeHousingField === "price" && housingDraft ? (
@@ -2020,13 +2044,6 @@ export function TripSpreadsheetPage({
                                     )}
                                   </div>
                                 )}
-                                <button
-                                  className="rounded-lg border border-border px-2 py-1 text-xs font-semibold text-error hover:bg-danger-surface"
-                                  onClick={() => setPendingDeletion({ housing })}
-                                  type="button"
-                                >
-                                  {t("common.delete")}
-                                </button>
                               </div>
                             ) : creatingHousingDayDate === day.date ? (
                               renderHousingCreateForm()
@@ -2036,7 +2053,7 @@ export function TripSpreadsheetPage({
                                   {t("spreadsheet.noHousing")}
                                 </span>
                                 <button
-                                  className="rounded-lg border border-border px-2 py-1 text-xs font-semibold text-muted hover:border-brand hover:text-brand disabled:opacity-50"
+                                  className="rounded-lg px-2 py-1 text-sm font-semibold text-muted hover:bg-surface-muted hover:text-on-surface disabled:opacity-50"
                                   disabled={isSaving}
                                   onClick={() => startCreatingHousing(day.date)}
                                   type="button"
