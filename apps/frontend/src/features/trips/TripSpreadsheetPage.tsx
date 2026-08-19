@@ -266,7 +266,7 @@ export function TripSpreadsheetPage({
   )
   const getHousingRowSpan = (startIndex: number) => {
     if (!housingByDay[startIndex]) {
-      return 1
+      return rowCounts[startIndex]
     }
 
     const housingId = housingByDay[startIndex]?.id ?? null
@@ -1431,12 +1431,6 @@ export function TripSpreadsheetPage({
                           onDragOver={(event) => handleSpreadsheetDayDragOver(event, day.date)}
                           onDrop={(event) => void handleSpreadsheetDayDrop(event)}
                         >
-                          {!housing && (
-                            <td
-                              aria-hidden="true"
-                              className="border-b border-r border-border-divider bg-surface-soft p-3"
-                            />
-                          )}
                           <td
                             className="border-b border-border-divider px-3 py-2 text-sm text-muted"
                             colSpan={itineraryColumnCount}
