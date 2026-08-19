@@ -31,6 +31,14 @@ function SpreadsheetCell({ children }: { children: ReactNode }) {
   return <td className="border-b border-border-divider px-3 py-2 align-top text-sm">{children}</td>
 }
 
+function SpreadsheetHeaderCell({ children }: { children: ReactNode }) {
+  return (
+    <th className="border-b border-border-divider bg-surface-muted px-3 py-2 first:rounded-tl-2xl last:rounded-tr-2xl">
+      {children}
+    </th>
+  )
+}
+
 function LinkCell({ href, label }: { href: string | null; label: string }) {
   if (!href || !isAllowedGoogleMapsUrl(href)) {
     return <SpreadsheetCell>{null}</SpreadsheetCell>
@@ -73,31 +81,21 @@ function HousingTable({
           )}
           {websiteVisible && <col className="w-32" />}
         </colgroup>
-        <thead className="bg-surface-muted text-xs font-semibold uppercase tracking-wide text-muted">
+        <thead className="text-xs font-semibold uppercase tracking-wide text-muted">
           <tr>
-            <th className="border-b border-border-divider px-3 py-2">{t("spreadsheet.name")}</th>
-            <th className="border-b border-border-divider px-3 py-2">{t("spreadsheet.checkIn")}</th>
-            <th className="border-b border-border-divider px-3 py-2">
-              {t("spreadsheet.checkOut")}
-            </th>
-            <th className="border-b border-border-divider px-3 py-2">
-              {t("spreadsheet.googleMaps")}
-            </th>
-            <th className="border-b border-border-divider px-3 py-2">{t("spreadsheet.notes")}</th>
+            <SpreadsheetHeaderCell>{t("spreadsheet.name")}</SpreadsheetHeaderCell>
+            <SpreadsheetHeaderCell>{t("spreadsheet.checkIn")}</SpreadsheetHeaderCell>
+            <SpreadsheetHeaderCell>{t("spreadsheet.checkOut")}</SpreadsheetHeaderCell>
+            <SpreadsheetHeaderCell>{t("spreadsheet.googleMaps")}</SpreadsheetHeaderCell>
+            <SpreadsheetHeaderCell>{t("spreadsheet.notes")}</SpreadsheetHeaderCell>
             {currenciesVisible && (
               <>
-                <th className="border-b border-border-divider px-3 py-2">
-                  {t("spreadsheet.price")}
-                </th>
-                <th className="border-b border-border-divider px-3 py-2">
-                  {t("spreadsheet.currency")}
-                </th>
+                <SpreadsheetHeaderCell>{t("spreadsheet.price")}</SpreadsheetHeaderCell>
+                <SpreadsheetHeaderCell>{t("spreadsheet.currency")}</SpreadsheetHeaderCell>
               </>
             )}
             {websiteVisible && (
-              <th className="border-b border-border-divider px-3 py-2">
-                {t("spreadsheet.website")}
-              </th>
+              <SpreadsheetHeaderCell>{t("spreadsheet.website")}</SpreadsheetHeaderCell>
             )}
           </tr>
         </thead>
@@ -179,43 +177,23 @@ export function TripSpreadsheetPage({ trip, showDetails }: TripSpreadsheetPagePr
                 )}
                 {showWebsite && <col className="w-32" />}
               </colgroup>
-              <thead className="sticky top-0 z-10 bg-surface-muted text-xs font-semibold uppercase tracking-wide text-muted">
+              <thead className="sticky top-0 z-10 text-xs font-semibold uppercase tracking-wide text-muted">
                 <tr>
-                  <th className="border-b border-border-divider px-3 py-2">
-                    {t("spreadsheet.date")}
-                  </th>
-                  <th className="border-b border-border-divider px-3 py-2">
-                    {t("spreadsheet.type")}
-                  </th>
-                  <th className="border-b border-border-divider px-3 py-2">
-                    {t("spreadsheet.title")}
-                  </th>
-                  <th className="border-b border-border-divider px-3 py-2">
-                    {t("spreadsheet.start")}
-                  </th>
-                  <th className="border-b border-border-divider px-3 py-2">
-                    {t("spreadsheet.end")}
-                  </th>
-                  <th className="border-b border-border-divider px-3 py-2">
-                    {t("spreadsheet.googleMaps")}
-                  </th>
-                  <th className="border-b border-border-divider px-3 py-2">
-                    {t("spreadsheet.notes")}
-                  </th>
+                  <SpreadsheetHeaderCell>{t("spreadsheet.date")}</SpreadsheetHeaderCell>
+                  <SpreadsheetHeaderCell>{t("spreadsheet.type")}</SpreadsheetHeaderCell>
+                  <SpreadsheetHeaderCell>{t("spreadsheet.title")}</SpreadsheetHeaderCell>
+                  <SpreadsheetHeaderCell>{t("spreadsheet.start")}</SpreadsheetHeaderCell>
+                  <SpreadsheetHeaderCell>{t("spreadsheet.end")}</SpreadsheetHeaderCell>
+                  <SpreadsheetHeaderCell>{t("spreadsheet.googleMaps")}</SpreadsheetHeaderCell>
+                  <SpreadsheetHeaderCell>{t("spreadsheet.notes")}</SpreadsheetHeaderCell>
                   {showPrice && (
                     <>
-                      <th className="border-b border-border-divider px-3 py-2">
-                        {t("spreadsheet.price")}
-                      </th>
-                      <th className="border-b border-border-divider px-3 py-2">
-                        {t("spreadsheet.currency")}
-                      </th>
+                      <SpreadsheetHeaderCell>{t("spreadsheet.price")}</SpreadsheetHeaderCell>
+                      <SpreadsheetHeaderCell>{t("spreadsheet.currency")}</SpreadsheetHeaderCell>
                     </>
                   )}
                   {showWebsite && (
-                    <th className="border-b border-border-divider px-3 py-2">
-                      {t("spreadsheet.website")}
-                    </th>
+                    <SpreadsheetHeaderCell>{t("spreadsheet.website")}</SpreadsheetHeaderCell>
                   )}
                 </tr>
               </thead>
