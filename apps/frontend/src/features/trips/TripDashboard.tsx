@@ -26,6 +26,24 @@ function getInitialShowItemDetails() {
   return window.localStorage.getItem(storageKeys.showItemDetails) !== "false"
 }
 
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches,
+  )
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(min-width: 1024px)")
+    const updateDesktopState = () => setIsDesktop(mediaQuery.matches)
+
+    updateDesktopState()
+    mediaQuery.addEventListener("change", updateDesktopState)
+
+    return () => mediaQuery.removeEventListener("change", updateDesktopState)
+  }, [])
+
+  return isDesktop
+}
+
 export function TripDashboard({ session }: TripDashboardProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -35,6 +53,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
   const isBackupMode = location.pathname.endsWith("/backup")
   const isPlanMode = !isTravelMode && !isBackupMode
   const hasValidTripId = Boolean(tripId && tripId !== ":tripId")
+  const isDesktop = useIsDesktop()
   const [trips, setTrips] = useState<Trip[]>([])
   const [selectedTrip, setSelectedTrip] = useState<TripDetail | null>(null)
   const [search, setSearch] = useState("")
@@ -121,7 +140,10 @@ export function TripDashboard({ session }: TripDashboardProps) {
     isPaused: () => false,
     onError: setDetailsError,
     onTripUpdated: handleTripUpdated,
-    tripId: hasValidTripId && (isPlanMode || isTravelMode || isBackupMode) ? tripId : undefined,
+    tripId:
+      hasValidTripId && (isTravelMode || isBackupMode || (isPlanMode && isDesktop))
+        ? tripId
+        : undefined,
   })
 
   const filteredTrips = useMemo(() => {
@@ -175,6 +197,22 @@ export function TripDashboard({ session }: TripDashboardProps) {
     } catch (reason: unknown) {
       setError(getErrorMessage(reason))
     }
+  }
+
+  function renderTripDetails() {
+    return (
+      <TripDetails
+        accessToken={session.access_token}
+        error={detailsError}
+        isLoading={isDetailsLoading}
+        onTripDeleted={handleDeleteTrip}
+        onTripUpdated={handleTripUpdated}
+        trip={selectedTrip}
+        userId={session.user.id}
+        daySelection={daySelection}
+        showDetails={showItemDetails}
+      />
+    )
   }
 
   return (
@@ -301,19 +339,13 @@ export function TripDashboard({ session }: TripDashboardProps) {
               userId={session.user.id}
             />
           ) : isPlanMode && selectedTrip ? (
-            <TripSpreadsheetPage showDetails={showItemDetails} trip={selectedTrip} />
+            isDesktop ? (
+              <TripSpreadsheetPage showDetails={showItemDetails} trip={selectedTrip} />
+            ) : (
+              renderTripDetails()
+            )
           ) : (
-            <TripDetails
-              accessToken={session.access_token}
-              error={detailsError}
-              isLoading={isDetailsLoading}
-              onTripDeleted={handleDeleteTrip}
-              onTripUpdated={handleTripUpdated}
-              trip={selectedTrip}
-              userId={session.user.id}
-              daySelection={daySelection}
-              showDetails={showItemDetails}
-            />
+            renderTripDetails()
           )}
         </section>
       ) : (
