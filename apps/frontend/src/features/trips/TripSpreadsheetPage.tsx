@@ -1078,7 +1078,7 @@ export function TripSpreadsheetPage({
     const normalizedGoogleMapsUrl = housingCreateDraft.googleMapsUrl.trim()
     const normalizedAmount = housingCreateDraft.priceAmount.trim()
 
-    if (!name) {
+    if (!name && !normalizedGoogleMapsUrl) {
       setSaveError(t("spreadsheet.housingNameRequired"))
       return
     }

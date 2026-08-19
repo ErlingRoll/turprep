@@ -1014,6 +1014,7 @@ export function createApp(dependencies: AppDependencies = {}) {
             const place = await googlePlacesResolver(housingInput.googleMapsUrl)
             housingInput = {
               ...housingInput,
+              name: housingInput.name || place.name,
               placeName: place.name,
               placeAddress: place.address,
               latitude: place.latitude,

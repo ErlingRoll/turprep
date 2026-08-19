@@ -194,6 +194,7 @@ export const HousingStaySchema = HousingStayFieldsSchema.extend({
 }).merge(ActivityPlaceSchema)
 
 export const CreateHousingStayInputSchema = HousingStayFieldsSchema.extend({
+  name: z.string().trim().max(200).optional().default(""),
   googleMapsUrl: z.string().url().nullable().optional().default(null),
   placeName: z.string().trim().max(200).nullable().optional().default(null),
   placeAddress: z.string().trim().max(500).nullable().optional().default(null),
@@ -205,6 +206,10 @@ export const CreateHousingStayInputSchema = HousingStayFieldsSchema.extend({
       stay.isBackup ||
       (stay.checkIn !== null && stay.checkOut !== null && stay.checkOut > stay.checkIn),
     "A planned housing stay must have a valid date range",
+  )
+  .refine(
+    (stay) => stay.name.length > 0 || stay.googleMapsUrl !== null,
+    "A housing stay must have a name or Google Maps link",
   )
   .refine(hasValidPrice, "A price amount and currency must be provided together")
 

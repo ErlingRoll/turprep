@@ -659,7 +659,6 @@ test("housing creation resolves a Google Maps link", async () => {
     .post("/api/trips/trip-1/housing")
     .set("Authorization", "Bearer valid-token")
     .send({
-      name: "Hotel Bristol",
       checkIn: "2026-08-10",
       checkOut: "2026-08-11",
       notes: null,
@@ -667,6 +666,7 @@ test("housing creation resolves a Google Maps link", async () => {
     })
 
   assert.equal(response.status, 201)
+  assert.equal(response.body.name, "Hotel Bristol")
   assert.equal(response.body.googleMapsUrl, "https://maps.app.goo.gl/UqkAP8Bc5mx1tcVq6")
   assert.equal(response.body.placeName, "Hotel Bristol")
   assert.equal(response.body.placeAddress, "Kristian IVs gate 7, Oslo")

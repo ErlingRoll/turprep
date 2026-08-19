@@ -2,9 +2,9 @@ import type { Dispatch, SetStateAction } from "react"
 import { useTranslation } from "react-i18next"
 import type { HousingStay } from "../../api"
 import { DatePicker } from "../../components/DatePicker"
-import { GoogleMapsLinkButton } from "../../components/GoogleMapsLinkButton"
 import { formatDate } from "../../lib/date-format"
 import { isAllowedGoogleMapsUrl } from "@turprep/models"
+import { SpreadsheetGoogleIcon } from "./SpreadsheetGoogleIcon"
 import type { HousingDraft, HousingEditableField } from "./spreadsheet-types"
 
 function formatHousingPrice(amount: number, currency: string, locale: string) {
@@ -88,28 +88,42 @@ export function SpreadsheetHousingContent({
   if (housing) {
     return (
       <div className="relative space-y-2">
-        <button
-          aria-label={t("common.delete")}
-          className="absolute right-0 top-0 rounded-lg border border-border p-1.5 text-error hover:bg-danger-surface"
-          onClick={onDeleteHousing}
-          title={t("common.delete")}
-          type="button"
-        >
-          <svg
-            aria-hidden="true"
-            className="size-4"
-            fill="none"
-            viewBox="0 0 24 24"
+        <div className="absolute right-0 top-0 grid gap-1">
+          {housing.googleMapsUrl && isAllowedGoogleMapsUrl(housing.googleMapsUrl) && (
+            <a
+              aria-label={t("tripDetails.openGoogleMaps")}
+              className="grid size-9 place-items-center rounded-xl border border-border bg-surface p-2 text-muted hover:bg-surface-muted hover:text-brand"
+              href={housing.googleMapsUrl}
+              rel="noreferrer"
+              target="_blank"
+              title={t("tripDetails.openGoogleMaps")}
+            >
+              <SpreadsheetGoogleIcon />
+            </a>
+          )}
+          <button
+            aria-label={t("common.delete")}
+            className="grid size-9 place-items-center rounded-xl border border-border bg-surface p-2 text-error hover:bg-danger-surface"
+            onClick={onDeleteHousing}
+            title={t("common.delete")}
+            type="button"
           >
-            <path
-              d="M4 7h16m-10 4v6m4-6v6M9 7V5h6v2m-9 0 1 12h10l1-12"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="1.8"
-            />
-          </svg>
-        </button>
+            <svg
+              aria-hidden="true"
+              className="size-4"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <path
+                d="M4 7h16m-10 4v6m4-6v6M9 7V5h6v2m-9 0 1 12h10l1-12"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.8"
+              />
+            </svg>
+          </button>
+        </div>
         {activeHousingField === "name" && housingDraft ? (
           <>
             <input
@@ -173,14 +187,6 @@ export function SpreadsheetHousingContent({
           >
             {housing.checkOut ? formatDate(housing.checkOut) : t("tripDetails.checkOut")}
           </button>
-        )}
-        {housing.googleMapsUrl && isAllowedGoogleMapsUrl(housing.googleMapsUrl) && (
-          <div className="grid justify-items-start">
-            <GoogleMapsLinkButton
-              href={housing.googleMapsUrl}
-              label={t("tripDetails.openGoogleMaps")}
-            />
-          </div>
         )}
         {activeHousingField === "notes" && housingDraft ? (
           <>
