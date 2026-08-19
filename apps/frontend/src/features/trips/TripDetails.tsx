@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react"
+﻿import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react"
 import { useTranslation } from "react-i18next"
 import {
   createActivity,
@@ -23,14 +23,11 @@ import {
   getDayItemTime,
   sortDayItems,
   sortActivities,
-  formatActivityTime,
   getDayItemTitle,
   type DayItem,
 } from "../../lib/activity-format"
 import { LoadingCover } from "../../components/LoadingCover"
 import { ConfirmDialog } from "../../components/ConfirmDialog"
-import { formatDate } from "../../lib/date-format"
-import { shiftDate } from "../../lib/trip-dates"
 import { getDefaultCurrency } from "../../lib/currency"
 import { TripAuxiliaryDetails } from "./TripAuxiliaryDetails"
 import { replaceActivityInTrip, replaceHousingStayInTrip, replaceMealInTrip } from "./trip-state"
@@ -42,10 +39,10 @@ import { TripDayCard } from "./TripDayCard"
 import { TripDayNavigator } from "./TripDayNavigator"
 import { TripDetailsHeader } from "./TripDetailsHeader"
 import { TripMap, type TripMapMarker } from "./TripMap"
+import { TripMapMarkerDetails } from "./TripMapMarkerDetails"
 import { MobileDayPager } from "./MobileDayPager"
 import { useTripRealtime } from "./useTripRealtime"
-import { TripItemPreference } from "../../components/TripItemPreference"
-import { ItemDetailsDisplay, type ItemDetailValues } from "../../components/ItemDetails"
+import { type ItemDetailValues } from "../../components/ItemDetails"
 import type { TripDaySelection } from "./useTripDaySelection"
 import type { DayItemRecord, DropTarget, MovingItem, PlannerTab } from "./planner-types"
 import { isAllowedGoogleMapsUrl } from "@turprep/models"
@@ -277,138 +274,6 @@ export function TripDetails({
   const itemDetailVisibility = {
     showPrice: showDetails && currentTrip.itemDetailVisibility.showPrice,
     showWebsite: showDetails && currentTrip.itemDetailVisibility.showWebsite,
-  }
-
-  function renderMapMarkerDetails(marker: TripMapMarker) {
-    if (marker.type === "housing") {
-      const stay = currentTrip.housingStays.find((currentStay) => currentStay.id === marker.id)
-
-      return stay ? (
-        <article className="rounded-xl bg-surface p-3">
-          <div className="flex items-start gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold text-brand">{stay.name}</p>
-              <p className="mt-1 text-sm text-muted">
-                {formatDate(stay.checkIn ?? currentTrip.startDate)} –{" "}
-                {formatDate(stay.checkOut ?? shiftDate(currentTrip.endDate, 1))}
-              </p>
-              {stay.notes?.trim() && (
-                <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{stay.notes}</p>
-              )}
-              <ItemDetailsDisplay
-                details={stay}
-                showPrice={itemDetailVisibility.showPrice}
-                showWebsite={itemDetailVisibility.showWebsite}
-              />
-            </div>
-            <div className="flex shrink-0 gap-1">
-              <button
-                className="rounded-lg px-2 py-1 text-xs font-semibold text-on-surface hover:bg-surface-muted"
-                onClick={() => setMapHousingAction({ type: "edit", stayId: stay.id })}
-                type="button"
-              >
-                {t("common.edit")}
-              </button>
-              <button
-                className="rounded-lg px-2 py-1 text-xs font-semibold text-error hover:bg-danger-surface"
-                onClick={() => setMapHousingAction({ type: "delete", stayId: stay.id })}
-                type="button"
-              >
-                {t("common.delete")}
-              </button>
-            </div>
-          </div>
-          <TripItemPreference
-            disabled={savingPreferenceKey === `housing:${stay.id}`}
-            itemId={stay.id}
-            itemType="housing"
-            onChange={(value) => void handlePreferenceChange("housing", stay.id, value)}
-            preferences={currentTrip.preferences}
-            userId={userId}
-          />
-        </article>
-      ) : null
-    }
-
-    const item =
-      marker.type === "activity"
-        ? currentTrip.days
-            .flatMap((day) => day.activities)
-            .find((activity) => activity.id === marker.id)
-        : currentTrip.meals.find((meal) => meal.id === marker.id)
-
-    if (!item) {
-      return null
-    }
-
-    const itemType = marker.type
-    return (
-      <article className="rounded-xl bg-surface p-3">
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="font-semibold text-brand">
-              {getDayItemTitle(item, t("tripDetails.untitledItem"))}
-            </p>
-            <p className="mt-1">
-              {formatActivityTime(item, {
-                allDay: t("tripDetails.allDay"),
-                timeNotSet: t("tripDetails.timeNotSet"),
-              })}
-            </p>
-            {itemType === "meal" && (
-              <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-accent-text">
-                {t("tripDetails.meal")}
-              </p>
-            )}
-            {item.placeAddress && <p className="mt-1 text-sm text-muted">{item.placeAddress}</p>}
-            {item.notes?.trim() && (
-              <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{item.notes}</p>
-            )}
-            <ItemDetailsDisplay
-              details={item}
-              showPrice={itemDetailVisibility.showPrice}
-              showWebsite={itemDetailVisibility.showWebsite}
-            />
-            {item.googleMapsUrl && (
-              <a
-                className="mt-2 inline-block text-sm font-semibold text-brand underline"
-                href={item.googleMapsUrl}
-                rel="noreferrer"
-                target="_blank"
-              >
-                {t("tripDetails.openGoogleMaps")}
-              </a>
-            )}
-          </div>
-          <div className="flex shrink-0 gap-1">
-            <button
-              className="rounded-lg px-2 py-1 text-xs font-semibold text-on-surface hover:bg-surface-muted"
-              onClick={() => (itemType === "activity" ? editActivity(item) : editMeal(item))}
-              type="button"
-            >
-              {t("common.edit")}
-            </button>
-            <button
-              className="rounded-lg px-2 py-1 text-xs font-semibold text-error hover:bg-danger-surface"
-              onClick={() =>
-                itemType === "activity" ? requestDeleteActivity(item) : requestDeleteMeal(item)
-              }
-              type="button"
-            >
-              {t("common.delete")}
-            </button>
-          </div>
-        </div>
-        <TripItemPreference
-          disabled={savingPreferenceKey === `${itemType}:${item.id}`}
-          itemId={item.id}
-          itemType={itemType}
-          onChange={(value) => void handlePreferenceChange(itemType, item.id, value)}
-          preferences={currentTrip.preferences}
-          userId={userId}
-        />
-      </article>
-    )
   }
 
   function handleMapMarkerClick(marker: TripMapMarker) {
@@ -1601,7 +1466,23 @@ export function TripDetails({
             onMarkerClick={handleMapMarkerClick}
             onMarkerLocationSave={handleSaveMarkerLocation}
             onFocusMarkerHandled={() => setMapFocusMarker(null)}
-            renderMarkerDetails={renderMapMarkerDetails}
+            renderMarkerDetails={(marker) => (
+              <TripMapMarkerDetails
+                marker={marker}
+                trip={currentTrip}
+                itemDetailVisibility={itemDetailVisibility}
+                savingPreferenceKey={savingPreferenceKey}
+                userId={userId}
+                onMapHousingAction={setMapHousingAction}
+                onEditActivity={editActivity}
+                onRequestDeleteActivity={requestDeleteActivity}
+                onEditMeal={editMeal}
+                onRequestDeleteMeal={requestDeleteMeal}
+                onPreferenceChange={(itemType, itemId, value) =>
+                  void handlePreferenceChange(itemType, itemId, value)
+                }
+              />
+            )}
           />
         </aside>
       </div>
