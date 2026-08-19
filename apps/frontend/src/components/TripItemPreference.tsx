@@ -59,7 +59,7 @@ export function TripItemPreferenceDistribution({
     <div
       aria-label={summary}
       className={`flex overflow-hidden rounded-full bg-surface-muted ${
-        isVertical ? "h-full w-px flex-col" : "h-px w-full"
+        isVertical ? "h-full w-0.5 flex-col" : "h-px w-full"
       }`}
       role="img"
       title={summary}

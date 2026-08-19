@@ -257,9 +257,17 @@ function SpreadsheetCell({
   )
 }
 
-function SpreadsheetHeaderCell({ children }: { children: ReactNode }) {
+function SpreadsheetHeaderCell({
+  children,
+  className = "",
+}: {
+  children: ReactNode
+  className?: string
+}) {
   return (
-    <th className="border-b border-border-divider bg-surface-muted px-3 py-2 first:rounded-tl-2xl last:rounded-tr-2xl">
+    <th
+      className={`border-b border-border-divider bg-surface-muted px-3 py-2 first:rounded-tl-2xl last:rounded-tr-2xl ${className}`}
+    >
       {children}
     </th>
   )
@@ -1400,10 +1408,10 @@ export function TripSpreadsheetPage({
           <p className="mt-3 text-sm text-error">{saveError}</p>
         )}
 
-        <div className="relative left-1/2 mt-5 w-screen -translate-x-1/2 px-2">
-          <div className="mx-auto w-fit rounded-2xl border border-border-card bg-surface">
+        <div className="relative mt-5 w-full overflow-x-auto">
+          <div className="w-full min-w-0 rounded-2xl border border-border-card bg-surface">
             <table
-              className="mx-auto w-max min-w-[83rem] table-fixed border-collapse text-left"
+              className="w-full min-w-[64rem] table-fixed border-collapse text-left"
               ref={tableRef}
             >
               <colgroup>
@@ -1419,6 +1427,7 @@ export function TripSpreadsheetPage({
                   </>
                 )}
                 {showWebsite && <col className="w-32" />}
+                <col />
               </colgroup>
               <thead className="sticky top-0 z-10 text-xs font-semibold uppercase tracking-wide text-muted">
                 <tr>
@@ -1436,7 +1445,7 @@ export function TripSpreadsheetPage({
                   {showWebsite && (
                     <SpreadsheetHeaderCell>{t("spreadsheet.website")}</SpreadsheetHeaderCell>
                   )}
-                  <SpreadsheetHeaderCell>{null}</SpreadsheetHeaderCell>
+                  <SpreadsheetHeaderCell className="w-full">{null}</SpreadsheetHeaderCell>
                 </tr>
               </thead>
               <tbody>
