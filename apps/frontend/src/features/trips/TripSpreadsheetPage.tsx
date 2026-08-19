@@ -1,19 +1,63 @@
 import { Fragment, useState, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
-import { updateActivity, updateMeal, type Activity, type Meal, type TripDetail } from "../../api"
+import {
+  updateActivity,
+  updateHousingStay,
+  updateMeal,
+  type Activity,
+  type HousingStay,
+  type Meal,
+  type TripDetail,
+} from "../../api"
+import { DatePicker } from "../../components/DatePicker"
 import { GoogleMapsLinkButton } from "../../components/GoogleMapsLinkButton"
 import { TimePicker } from "../../components/TimePicker"
+import { getDateLocale } from "../../i18n"
 import { getDayItemTitle, sortDayItems } from "../../lib/activity-format"
+import { getDefaultCurrency } from "../../lib/currency"
 import { formatLongDate } from "../../lib/date-format"
 import { getErrorMessage } from "../../lib/errors"
 import { isAllowedGoogleMapsUrl } from "@turprep/models"
-import { replaceActivityInTrip, replaceMealInTrip } from "./trip-state"
+import {
+  replaceActivityInTrip,
+  replaceHousingStayInTrip,
+  replaceMealInTrip,
+} from "./trip-state"
 
 type TripSpreadsheetPageProps = {
   accessToken: string
   onTripUpdated: (trip: TripDetail) => void
   trip: TripDetail
   showDetails: boolean
+}
+
+type HousingDraft = {
+  checkIn: string
+  checkOut: string
+  name: string
+  notes: string
+  priceAmount: string
+  priceCurrency: string
+  website: string
+}
+
+function getHousingDraft(stay: HousingStay): HousingDraft {
+  return {
+    checkIn: stay.checkIn ?? "",
+    checkOut: stay.checkOut ?? "",
+    name: stay.name,
+    notes: stay.notes ?? "",
+    priceAmount: stay.priceAmount === null ? "" : String(stay.priceAmount),
+    priceCurrency: stay.priceCurrency ?? "",
+    website: stay.website ?? "",
+  }
+}
+
+function formatHousingPrice(amount: number, currency: string, locale: string) {
+  return new Intl.NumberFormat(locale, {
+    currency,
+    style: "currency",
+  }).format(amount)
 }
 
 type ItineraryRow = {
@@ -30,6 +74,15 @@ type ItemDraft = {
 }
 
 type EditableField = "endTime" | "notes" | "startTime" | "title"
+type HousingEditableField = "checkIn" | "checkOut" | "name" | "notes" | "price" | "website"
+const housingEditableFields: HousingEditableField[] = [
+  "name",
+  "checkIn",
+  "checkOut",
+  "notes",
+  "price",
+  "website",
+]
 
 function getItemDraft(item: Activity | Meal): ItemDraft {
   return {
@@ -82,13 +135,18 @@ export function TripSpreadsheetPage({
   trip,
   showDetails,
 }: TripSpreadsheetPageProps) {
-  const { t } = useTranslation()
+  const { i18n, t } = useTranslation()
+  const locale = getDateLocale(i18n.language)
   const [editingFieldKey, setEditingFieldKey] = useState<string | null>(null)
   const [draft, setDraft] = useState<ItemDraft | null>(null)
+  const [housingEditingKey, setHousingEditingKey] = useState<string | null>(null)
+  const [housingDraft, setHousingDraft] = useState<HousingDraft | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const showPrice = showDetails && trip.itemDetailVisibility.showPrice
   const showWebsite = showDetails && trip.itemDetailVisibility.showWebsite
+  const currencies =
+    trip.acceptedCurrencies.length > 0 ? trip.acceptedCurrencies : [getDefaultCurrency()]
   const housingStays = trip.housingStays.filter((stay) => !stay.isBackup)
   const itineraryRows = trip.days.map((day) => ({
     day,
@@ -134,6 +192,132 @@ export function TripSpreadsheetPage({
     setEditingFieldKey(null)
     setDraft(null)
     setSaveError(null)
+  }
+
+  function startHousingEditing(stay: HousingStay, field: HousingEditableField) {
+    if (isSaving) {
+      return
+    }
+
+    setHousingEditingKey(`${stay.id}:${field}`)
+    setHousingDraft(getHousingDraft(stay))
+    setSaveError(null)
+  }
+
+  function cancelHousingEditing() {
+    if (isSaving) {
+      return
+    }
+
+    setHousingEditingKey(null)
+    setHousingDraft(null)
+    setSaveError(null)
+  }
+
+  async function saveHousingEditingField(stay: HousingStay, field: HousingEditableField) {
+    if (!housingDraft || housingEditingKey !== `${stay.id}:${field}`) {
+      return
+    }
+
+    const name = housingDraft.name.trim()
+    const normalizedAmount = housingDraft.priceAmount.trim()
+    const normalizedWebsite = housingDraft.website.trim()
+
+    if (field === "name" && !name) {
+      setSaveError(t("spreadsheet.housingNameRequired"))
+      return
+    }
+
+    if (field === "price") {
+      if (!normalizedAmount && housingDraft.priceCurrency) {
+        setSaveError(t("itemDetails.priceAmountRequired"))
+        return
+      }
+
+      if (normalizedAmount) {
+        const parsedAmount = Number(normalizedAmount)
+        const decimalPlaces = normalizedAmount.split(".")[1]?.length ?? 0
+
+        if (
+          !Number.isFinite(parsedAmount) ||
+          parsedAmount < 0 ||
+          decimalPlaces > 2 ||
+          !/^\d+(?:\.\d{1,2})?$/.test(normalizedAmount)
+        ) {
+          setSaveError(t("itemDetails.priceInvalid"))
+          return
+        }
+
+        if (!housingDraft.priceCurrency) {
+          setSaveError(t("itemDetails.priceCurrencyRequired"))
+          return
+        }
+      }
+    }
+
+    if (
+      (field === "checkIn" || field === "checkOut") &&
+      (!housingDraft.checkIn ||
+        !housingDraft.checkOut ||
+        housingDraft.checkOut <= housingDraft.checkIn)
+    ) {
+      setSaveError(t("spreadsheet.housingDateRangeInvalid"))
+      return
+    }
+
+    setIsSaving(true)
+    setSaveError(null)
+
+    try {
+      const updatedStay = await updateHousingStay(accessToken, trip.id, stay.id, {
+        ...(field === "name" ? { name } : {}),
+        ...(field === "notes" ? { notes: housingDraft.notes.trim() || null } : {}),
+        ...(field === "price"
+          ? {
+              priceAmount: normalizedAmount ? Number(normalizedAmount) : null,
+              priceCurrency: normalizedAmount ? housingDraft.priceCurrency : null,
+            }
+          : {}),
+        ...(field === "website" ? { website: normalizedWebsite || null } : {}),
+        ...(field === "checkIn" || field === "checkOut"
+          ? {
+              checkIn: housingDraft.checkIn,
+              checkOut: housingDraft.checkOut,
+            }
+          : {}),
+      })
+      onTripUpdated(replaceHousingStayInTrip(trip, updatedStay))
+      setHousingEditingKey(null)
+      setHousingDraft(null)
+    } catch (reason: unknown) {
+      setSaveError(getErrorMessage(reason))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  function renderHousingActions(stay: HousingStay, field: HousingEditableField) {
+    return (
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button
+          className="rounded-lg bg-brand-surface px-2 py-1 text-xs font-semibold text-on-brand disabled:opacity-50"
+          disabled={isSaving}
+          onClick={() => void saveHousingEditingField(stay, field)}
+          type="button"
+        >
+          {isSaving ? t("common.saving") : t("common.save")}
+        </button>
+        <button
+          className="rounded-lg border border-border px-2 py-1 text-xs font-semibold text-on-surface disabled:opacity-50"
+          disabled={isSaving}
+          onClick={cancelHousingEditing}
+          type="button"
+        >
+          {t("common.cancel")}
+        </button>
+        {saveError && <p className="basis-full text-xs text-error">{saveError}</p>}
+      </div>
+    )
   }
 
   async function saveEditingField(
@@ -248,6 +432,11 @@ export function TripSpreadsheetPage({
                   const housingId = housing?.id ?? null
                   const previousHousingId = housingByDay[dayIndex - 1]?.id ?? null
                   const startsHousingBlock = dayIndex === 0 || housingId !== previousHousingId
+                  const activeHousingField = housing
+                    ? (housingEditableFields.find(
+                        (field) => housingEditingKey === `${housing.id}:${field}`,
+                      ) ?? null)
+                    : null
 
                   return (
                     <Fragment key={day.date}>
@@ -259,14 +448,101 @@ export function TripSpreadsheetPage({
                           >
                             {housing ? (
                               <div className="space-y-2">
-                                <p className="font-semibold leading-tight text-brand">
-                                  {housing.name}
-                                </p>
-                                {housing.checkIn && housing.checkOut && (
-                                  <p className="text-xs text-muted">
-                                    {formatLongDate(housing.checkIn)} –{" "}
-                                    {formatLongDate(housing.checkOut)}
-                                  </p>
+                                {activeHousingField === "name" && housingDraft ? (
+                                  <>
+                                    <input
+                                      aria-label={t("tripDetails.housingName")}
+                                      autoFocus
+                                      className="w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
+                                      onChange={(event) =>
+                                        setHousingDraft((current) =>
+                                          current ? { ...current, name: event.target.value } : current,
+                                        )
+                                      }
+                                      value={housingDraft.name}
+                                    />
+                                    {renderHousingActions(housing, "name")}
+                                  </>
+                                ) : (
+                                  <button
+                                    className="w-full cursor-text text-left font-semibold leading-tight text-brand transition hover:text-brand"
+                                    onClick={() => startHousingEditing(housing, "name")}
+                                    type="button"
+                                  >
+                                    {housing.name}
+                                  </button>
+                                )}
+                                {activeHousingField === "checkIn" && housingDraft ? (
+                                  <>
+                                    <DatePicker
+                                      label={t("tripDetails.checkIn")}
+                                      onChange={(value) =>
+                                        setHousingDraft((current) =>
+                                          current ? { ...current, checkIn: value } : current,
+                                        )
+                                      }
+                                      value={housingDraft.checkIn}
+                                    />
+                                    {renderHousingActions(housing, "checkIn")}
+                                  </>
+                                ) : (
+                                  <button
+                                    className="w-full cursor-text text-left text-xs text-muted transition hover:text-brand"
+                                    onClick={() => startHousingEditing(housing, "checkIn")}
+                                    type="button"
+                                  >
+                                    {housing.checkIn
+                                      ? formatLongDate(housing.checkIn)
+                                      : t("tripDetails.checkIn")}
+                                  </button>
+                                )}
+                                {activeHousingField === "checkOut" && housingDraft ? (
+                                  <>
+                                    <DatePicker
+                                      label={t("tripDetails.checkOut")}
+                                      onChange={(value) =>
+                                        setHousingDraft((current) =>
+                                          current ? { ...current, checkOut: value } : current,
+                                        )
+                                      }
+                                      value={housingDraft.checkOut}
+                                    />
+                                    {renderHousingActions(housing, "checkOut")}
+                                  </>
+                                ) : (
+                                  <button
+                                    className="w-full cursor-text text-left text-xs text-muted transition hover:text-brand"
+                                    onClick={() => startHousingEditing(housing, "checkOut")}
+                                    type="button"
+                                  >
+                                    {housing.checkOut
+                                      ? formatLongDate(housing.checkOut)
+                                      : t("tripDetails.checkOut")}
+                                  </button>
+                                )}
+                                {activeHousingField === "notes" && housingDraft ? (
+                                  <>
+                                    <textarea
+                                      aria-label={t("tripDetails.notes")}
+                                      autoFocus
+                                      className="min-h-20 resize-y rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
+                                      onChange={(event) =>
+                                        setHousingDraft((current) =>
+                                          current ? { ...current, notes: event.target.value } : current,
+                                        )
+                                      }
+                                      value={housingDraft.notes}
+                                    />
+                                    {renderHousingActions(housing, "notes")}
+                                  </>
+                                ) : (
+                                  <button
+                                    className="w-full cursor-text whitespace-pre-wrap text-left text-sm text-muted transition hover:text-brand"
+                                    onClick={() => startHousingEditing(housing, "notes")}
+                                    type="button"
+                                  >
+                                    {housing.notes?.trim() || t("tripDetails.notes")}
+                                  </button>
                                 )}
                                 {housing.googleMapsUrl &&
                                   isAllowedGoogleMapsUrl(housing.googleMapsUrl) && (
@@ -275,6 +551,120 @@ export function TripSpreadsheetPage({
                                       label={t("tripDetails.openGoogleMaps")}
                                     />
                                   )}
+                                {showPrice && (
+                                  <div className="mt-2 grid gap-1 text-sm text-muted">
+                                    {activeHousingField === "price" && housingDraft ? (
+                                      <>
+                                        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_5rem]">
+                                          <label className="grid gap-1 text-xs font-medium">
+                                            {t("itemDetails.price")}
+                                            <input
+                                              className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
+                                              inputMode="decimal"
+                                              min="0"
+                                              onChange={(event) =>
+                                                setHousingDraft((current) =>
+                                                  current
+                                                    ? { ...current, priceAmount: event.target.value }
+                                                    : current,
+                                                )
+                                              }
+                                              step="0.01"
+                                              type="number"
+                                              value={housingDraft.priceAmount}
+                                            />
+                                          </label>
+                                          <label className="grid gap-1 text-xs font-medium">
+                                            {t("itemDetails.currency")}
+                                            <select
+                                              className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
+                                              onChange={(event) =>
+                                                setHousingDraft((current) =>
+                                                  current
+                                                    ? {
+                                                        ...current,
+                                                        priceCurrency: event.target.value,
+                                                      }
+                                                    : current,
+                                                )
+                                              }
+                                              value={housingDraft.priceCurrency}
+                                            >
+                                              <option value="">{t("itemDetails.noCurrency")}</option>
+                                              {housingDraft.priceCurrency &&
+                                                !currencies.includes(housingDraft.priceCurrency) && (
+                                                  <option value={housingDraft.priceCurrency}>
+                                                    {housingDraft.priceCurrency}
+                                                  </option>
+                                                )}
+                                              {currencies.map((currency) => (
+                                                <option key={currency} value={currency}>
+                                                  {currency}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </label>
+                                        </div>
+                                        {renderHousingActions(housing, "price")}
+                                      </>
+                                    ) : (
+                                      <button
+                                        className="w-full cursor-text text-left transition hover:text-brand"
+                                        onClick={() => startHousingEditing(housing, "price")}
+                                        type="button"
+                                      >
+                                        <span className="font-semibold text-on-surface">
+                                          {t("itemDetails.price")}:
+                                        </span>{" "}
+                                        {housing.priceAmount !== null && housing.priceCurrency
+                                          ? formatHousingPrice(
+                                              housing.priceAmount,
+                                              housing.priceCurrency,
+                                              locale,
+                                            )
+                                          : t("itemDetails.notSet")}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                                {showWebsite && (
+                                  <div className="mt-1 text-sm text-muted">
+                                    {activeHousingField === "website" && housingDraft ? (
+                                      <>
+                                        <label className="grid gap-1 text-xs font-medium">
+                                          {t("itemDetails.website")}
+                                          <input
+                                            autoFocus
+                                            className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
+                                            maxLength={2000}
+                                            onChange={(event) =>
+                                              setHousingDraft((current) =>
+                                                current
+                                                  ? { ...current, website: event.target.value }
+                                                  : current,
+                                              )
+                                            }
+                                            placeholder={t("itemDetails.websitePlaceholder")}
+                                            type="text"
+                                            value={housingDraft.website}
+                                          />
+                                        </label>
+                                        {renderHousingActions(housing, "website")}
+                                      </>
+                                    ) : (
+                                      <button
+                                        className="w-full cursor-text break-all text-left transition hover:text-brand"
+                                        onClick={() => startHousingEditing(housing, "website")}
+                                        type="button"
+                                      >
+                                        <span className="font-semibold text-on-surface">
+                                          {t("itemDetails.website")}:
+                                        </span>{" "}
+                                        {housing.website?.trim() || t("itemDetails.notSet")}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             ) : (
                               <span className="text-sm text-muted">

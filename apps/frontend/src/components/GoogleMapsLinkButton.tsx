@@ -7,7 +7,7 @@ export function GoogleMapsLinkButton({ href, label }: GoogleMapsLinkButtonProps)
   return (
     <a
       aria-label={label}
-      className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-muted"
+      className="mt-2 inline-flex w-max items-center gap-1.5 whitespace-nowrap rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-muted"
       href={href}
       rel="noreferrer"
       target="_blank"
