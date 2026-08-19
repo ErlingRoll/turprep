@@ -1,7 +1,17 @@
-import { Fragment, useEffect, useRef, useState, type DragEvent, type ReactNode } from "react"
+import {
+  Fragment,
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type FormEvent,
+  type ReactNode,
+} from "react"
 import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
 import {
+  createActivity,
+  createMeal,
   updateActivity,
   getTrip,
   updateHousingStay,
@@ -17,6 +27,7 @@ import { DatePicker } from "../../components/DatePicker"
 import { GoogleMapsLinkButton } from "../../components/GoogleMapsLinkButton"
 import { SettingsIcon } from "../../components/SettingsIcon"
 import { TimePicker } from "../../components/TimePicker"
+import { DayItemForm } from "./DayItemForm"
 import { getDateLocale } from "../../i18n"
 import { getDayItemTitle, sortDayItems } from "../../lib/activity-format"
 import { getDefaultCurrency } from "../../lib/currency"
@@ -90,6 +101,10 @@ type ItemDraft = {
   notes: string
   startTime: string
   title: string
+}
+
+type CreateItemDraft = ItemDraft & {
+  googleMapsUrl: string
 }
 
 type EditableField = "endTime" | "notes" | "startTime" | "title"
@@ -189,6 +204,25 @@ function getItineraryRows(trip: TripDetail, date: string): ItineraryRow[] {
   }))
 }
 
+function getCreateItemDraft(): CreateItemDraft {
+  return {
+    allDay: true,
+    endTime: "",
+    googleMapsUrl: "",
+    notes: "",
+    startTime: "",
+    title: "",
+  }
+}
+
+function sortRowsByTime(rows: ItineraryRow[]): ItineraryRow[] {
+  const typeByItemId = new Map(rows.map((row) => [row.item.id, row.type]))
+  return sortDayItems(rows.map(({ item }) => ({ ...item, sortOrder: 0 }))).map((item) => ({
+    item,
+    type: typeByItemId.get(item.id) ?? "activity",
+  }))
+}
+
 function SpreadsheetCell({ children }: { children: ReactNode }) {
   return <td className="border-b border-border-divider px-3 py-2 align-top text-sm">{children}</td>
 }
@@ -227,6 +261,11 @@ export function TripSpreadsheetPage({
   const [housingEditingKey, setHousingEditingKey] = useState<string | null>(null)
   const [housingDraft, setHousingDraft] = useState<HousingDraft | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [creatingDayDate, setCreatingDayDate] = useState<string | null>(null)
+  const [creatingItemType, setCreatingItemType] = useState<ItineraryRow["type"]>("activity")
+  const [createDraft, setCreateDraft] = useState<CreateItemDraft>(getCreateItemDraft)
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [createGoogleMapsError, setCreateGoogleMapsError] = useState<string | null>(null)
   const [draggedItem, setDraggedItem] = useState<SpreadsheetDraggedItem | null>(null)
   const [dropTarget, setDropTargetState] = useState<SpreadsheetDropTarget | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -256,7 +295,10 @@ export function TripSpreadsheetPage({
         day.date < stay.checkOut,
     ),
   )
-  const rowCounts = itineraryRows.map(({ rows }) => 1 + Math.max(rows.length, 1))
+  const rowCounts = itineraryRows.map(
+    ({ day, rows }) =>
+      1 + Math.max(rows.length, 1) + (creatingDayDate === day.date ? 1 : 0),
+  )
   const getHousingRowSpan = (startIndex: number) => {
     const housingId = housingByDay[startIndex]?.id ?? null
     let endIndex = startIndex
@@ -351,6 +393,134 @@ export function TripSpreadsheetPage({
         endTime: item.endTime,
       })),
     )
+  }
+
+  function startCreatingItem(dayDate: string, itemType: ItineraryRow["type"]) {
+    if (isSaving) {
+      return
+    }
+
+    setCreatingDayDate(dayDate)
+    setCreatingItemType(itemType)
+    setCreateDraft(getCreateItemDraft())
+    setCreateError(null)
+    setCreateGoogleMapsError(null)
+  }
+
+  function cancelCreatingItem() {
+    if (isSaving) {
+      return
+    }
+
+    setCreatingDayDate(null)
+    setCreateDraft(getCreateItemDraft())
+    setCreateError(null)
+    setCreateGoogleMapsError(null)
+  }
+
+  function renderCreateItemForm(dayDate: string) {
+    return (
+      <>
+        <DayItemForm
+          allDay={createDraft.allDay}
+          editingItemId={null}
+          editingItemType={creatingItemType}
+          endTime={createDraft.endTime}
+          googleMapsError={createGoogleMapsError}
+          googleMapsUrl={createDraft.googleMapsUrl}
+          googleMapsUrlIsInvalid={
+            createDraft.googleMapsUrl.trim().length > 0 &&
+            !isAllowedGoogleMapsUrl(createDraft.googleMapsUrl.trim())
+          }
+          isMealForm={creatingItemType === "meal"}
+          isSaving={isSaving}
+          notes={createDraft.notes}
+          onAllDayChange={(allDay) => setCreateDraft((current) => ({ ...current, allDay }))}
+          onCancel={cancelCreatingItem}
+          onEndTimeChange={(endTime) => setCreateDraft((current) => ({ ...current, endTime }))}
+          onGoogleMapsUrlChange={(googleMapsUrl) => {
+            setCreateDraft((current) => ({ ...current, googleMapsUrl }))
+            setCreateGoogleMapsError(null)
+          }}
+          onNotesChange={(notes) => setCreateDraft((current) => ({ ...current, notes }))}
+          onSelectItemType={setCreatingItemType}
+          onStartTimeChange={(startTime) => setCreateDraft((current) => ({ ...current, startTime }))}
+          onSubmit={(event) => void saveNewItem(event, dayDate)}
+          onTitleChange={(title) => setCreateDraft((current) => ({ ...current, title }))}
+          startTime={createDraft.startTime}
+          title={createDraft.title}
+        />
+        {createError && <p className="mt-2 text-sm text-error">{createError}</p>}
+      </>
+    )
+  }
+
+  async function saveNewItem(event: FormEvent<HTMLFormElement>, dayDate: string) {
+    event.preventDefault()
+    const normalizedGoogleMapsUrl = createDraft.googleMapsUrl.trim()
+
+    if (normalizedGoogleMapsUrl && !isAllowedGoogleMapsUrl(normalizedGoogleMapsUrl)) {
+      setCreateGoogleMapsError(null)
+      setCreateError(null)
+      return
+    }
+
+    setIsSaving(true)
+    setCreateError(null)
+    setCreateGoogleMapsError(null)
+
+    try {
+      const input = {
+        tripDate: dayDate,
+        isBackup: false,
+        title: createDraft.title.trim() || null,
+        startTime: createDraft.allDay || !createDraft.startTime ? null : createDraft.startTime,
+        endTime: createDraft.allDay || !createDraft.endTime ? null : createDraft.endTime,
+        allDay: createDraft.allDay,
+        notes: createDraft.notes.trim() || null,
+        googleMapsUrl: normalizedGoogleMapsUrl || null,
+        placeName: null,
+        placeAddress: null,
+        latitude: null,
+        longitude: null,
+        priceAmount: null,
+        priceCurrency: null,
+        website: null,
+      }
+      const createdItem =
+        creatingItemType === "meal"
+          ? await createMeal(accessToken, trip.id, input)
+          : await createActivity(accessToken, trip.id, input)
+      const nextTrip: TripDetail =
+        creatingItemType === "meal"
+          ? { ...trip, meals: [...trip.meals, createdItem] }
+          : {
+              ...trip,
+              days: trip.days.map((day) =>
+                day.date === dayDate
+                  ? { ...day, activities: [...day.activities, createdItem] }
+                  : day,
+              ),
+            }
+      const normalizedRows = sortRowsByTime(getItineraryRows(nextTrip, dayDate))
+      const optimisticTrip = getOptimisticReorderedTrip(
+        nextTrip,
+        new Map([[dayDate, normalizedRows]]),
+        new Map(),
+      )
+
+      latestTripRef.current = optimisticTrip
+      onTripUpdated(optimisticTrip)
+      queueReorder(optimisticTrip)
+      setCreatingDayDate(null)
+      setCreateDraft(getCreateItemDraft())
+      setCreateError(null)
+      setCreateGoogleMapsError(null)
+    } catch (reason: unknown) {
+      setCreateError(getErrorMessage(reason))
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   function getOptimisticReorderedTrip(
@@ -1155,10 +1325,39 @@ export function TripSpreadsheetPage({
                           className="border-y border-border-divider px-3 py-2 text-left text-sm font-semibold text-brand"
                           colSpan={itineraryColumnCount}
                         >
-                          {formatLongDate(day.date)}
-                          {day.title?.trim() ? ` · ${day.title}` : ""}
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span>
+                              {formatLongDate(day.date)}
+                              {day.title?.trim() ? ` · ${day.title}` : ""}
+                            </span>
+                            <span className="flex flex-wrap gap-2 normal-case tracking-normal">
+                              <button
+                                className="rounded-lg border border-border px-2 py-1 text-xs font-semibold text-muted hover:border-brand hover:text-brand disabled:opacity-50"
+                                disabled={isSaving}
+                                onClick={() => startCreatingItem(day.date, "activity")}
+                                type="button"
+                              >
+                                + {t("spreadsheet.addActivity")}
+                              </button>
+                              <button
+                                className="rounded-lg border border-border px-2 py-1 text-xs font-semibold text-muted hover:border-brand hover:text-brand disabled:opacity-50"
+                                disabled={isSaving}
+                                onClick={() => startCreatingItem(day.date, "meal")}
+                                type="button"
+                              >
+                                + {t("spreadsheet.addMeal")}
+                              </button>
+                            </span>
+                          </div>
                         </th>
                       </tr>
+                      {creatingDayDate === day.date && (
+                        <tr>
+                          <td className="border-b border-border-divider p-3" colSpan={itineraryColumnCount}>
+                            {renderCreateItemForm(day.date)}
+                          </td>
+                        </tr>
+                      )}
                       {rows.length === 0 ? (
                         <tr
                           data-drop-empty-day={day.date}

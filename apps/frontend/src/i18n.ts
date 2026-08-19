@@ -75,6 +75,8 @@ const resources = {
         travel: "Reise",
       },
       spreadsheet: {
+        addActivity: "Legg til aktivitet",
+        addMeal: "Legg til måltid",
         activity: "Aktivitet",
         allDay: "Hele dagen",
         checkIn: "Innsjekk",
@@ -428,6 +430,8 @@ const resources = {
         travel: "Travel",
       },
       spreadsheet: {
+        addActivity: "Add activity",
+        addMeal: "Add meal",
         activity: "Activity",
         allDay: "All day",
         checkIn: "Check-in",
