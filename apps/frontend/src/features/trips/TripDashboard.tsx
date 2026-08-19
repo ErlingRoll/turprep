@@ -8,6 +8,7 @@ import { formatDateRange } from "../../lib/date-format"
 import { getSupabaseClient } from "../../lib/supabase"
 import { TripDetails } from "./TripDetails"
 import { TripBackupPage } from "./TripBackupPage"
+import { TripSpreadsheetPage } from "./TripSpreadsheetPage"
 import { TripForm } from "./TripForm"
 import { TravelMode } from "./TravelMode"
 import { useTripRealtime } from "./useTripRealtime"
@@ -32,6 +33,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
   const { tripId } = useParams<{ tripId: string }>()
   const isTravelMode = location.pathname.endsWith("/travel")
   const isBackupMode = location.pathname.endsWith("/backup")
+  const isSpreadsheetMode = location.pathname.endsWith("/spreadsheet")
   const [trips, setTrips] = useState<Trip[]>([])
   const [selectedTrip, setSelectedTrip] = useState<TripDetail | null>(null)
   const [search, setSearch] = useState("")
@@ -112,7 +114,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
     isPaused: () => false,
     onError: setDetailsError,
     onTripUpdated: handleTripUpdated,
-    tripId: isTravelMode || isBackupMode ? tripId : undefined,
+    tripId: isTravelMode || isBackupMode || isSpreadsheetMode ? tripId : undefined,
   })
 
   const filteredTrips = useMemo(() => {
@@ -231,7 +233,9 @@ export function TripDashboard({ session }: TripDashboardProps) {
                 ? t("travelMode.title")
                 : isBackupMode
                   ? t("tripModes.backup")
-                  : t("dashboard.plan")}
+                  : isSpreadsheetMode
+                    ? t("tripModes.spreadsheet")
+                    : t("dashboard.plan")}
             </h1>
             {selectedTrip &&
               (selectedTrip.itemDetailVisibility.showPrice ||
@@ -251,11 +255,13 @@ export function TripDashboard({ session }: TripDashboardProps) {
           )}
           <nav
             aria-label={t("tripModes.plan")}
-            className="mt-5 grid grid-cols-3 rounded-xl bg-surface-muted p-1 lg:sticky lg:top-0 lg:z-20"
+            className={`mt-5 grid grid-cols-3 rounded-xl bg-surface-muted p-1 lg:grid-cols-4 ${
+              isSpreadsheetMode ? "" : "lg:sticky lg:top-0 lg:z-20"
+            }`}
           >
             <Link
               className={`rounded-lg px-3 py-2 text-center text-sm font-semibold ${
-                !isTravelMode && !isBackupMode
+                !isTravelMode && !isBackupMode && !isSpreadsheetMode
                   ? "bg-surface text-on-surface shadow-sm"
                   : "text-muted"
               }`}
@@ -279,6 +285,14 @@ export function TripDashboard({ session }: TripDashboardProps) {
             >
               {t("tripModes.travel")}
             </Link>
+            <Link
+              className={`hidden rounded-lg px-3 py-2 text-center text-sm font-semibold lg:block ${
+                isSpreadsheetMode ? "bg-surface text-on-surface shadow-sm" : "text-muted"
+              }`}
+              to={`/trips/${tripId}/spreadsheet`}
+            >
+              {t("tripModes.spreadsheet")}
+            </Link>
           </nav>
           {isTravelMode && selectedTrip ? (
             <TravelMode showDetails={showItemDetails} trip={selectedTrip} />
@@ -291,6 +305,8 @@ export function TripDashboard({ session }: TripDashboardProps) {
               trip={selectedTrip}
               userId={session.user.id}
             />
+          ) : isSpreadsheetMode && selectedTrip ? (
+            <TripSpreadsheetPage showDetails={showItemDetails} trip={selectedTrip} />
           ) : (
             <TripDetails
               accessToken={session.access_token}
