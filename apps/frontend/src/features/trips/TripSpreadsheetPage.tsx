@@ -19,6 +19,7 @@ import {
   updateHousingStay,
   updateMeal,
   reorderDayItems,
+  setTripItemPreference,
   type Activity,
   type HousingStay,
   type Meal,
@@ -28,15 +29,21 @@ import {
 import { DatePicker } from "../../components/DatePicker"
 import { ConfirmDialog } from "../../components/ConfirmDialog"
 import { GoogleMapsLinkButton } from "../../components/GoogleMapsLinkButton"
+import { MapLocateButton } from "../../components/MapLocateButton"
 import { SettingsIcon } from "../../components/SettingsIcon"
 import { TimePicker } from "../../components/TimePicker"
+import { TripItemPreference } from "../../components/TripItemPreference"
 import { DayItemForm } from "./DayItemForm"
 import { getDateLocale } from "../../i18n"
 import { getDayItemTitle, sortDayItems } from "../../lib/activity-format"
 import { getDefaultCurrency } from "../../lib/currency"
 import { formatDate } from "../../lib/date-format"
 import { getErrorMessage } from "../../lib/errors"
-import { isAllowedGoogleMapsUrl } from "@turprep/models"
+import {
+  isAllowedGoogleMapsUrl,
+  type TripItemPreferenceValue,
+  type TripItemType,
+} from "@turprep/models"
 import {
   replaceActivityInTrip,
   replaceHousingStayInTrip,
@@ -47,9 +54,11 @@ import { TripSettings } from "./TripSettings"
 type TripSpreadsheetPageProps = {
   accessToken: string
   onTripDeleted: (trip: TripDetail) => Promise<void>
+  onOpenMap: (itemType: "activity" | "meal", itemId: string) => void
   onReorderPendingChange: (isPending: boolean) => void
   onTripUpdated: (trip: TripDetail) => void
   trip: TripDetail
+  userId: string
   showDetails: boolean
 }
 
@@ -248,6 +257,8 @@ type SpreadsheetItemActionsProps = {
   item: Activity | Meal
   onChangeGoogleMapsUrl: (googleMapsUrl: string | null) => Promise<string | null>
   onDelete: () => void
+  onMoveToBackup: () => void
+  onOpenMap?: () => void
 }
 
 function SpreadsheetItemActions({
@@ -255,6 +266,8 @@ function SpreadsheetItemActions({
   item,
   onChangeGoogleMapsUrl,
   onDelete,
+  onMoveToBackup,
+  onOpenMap,
 }: SpreadsheetItemActionsProps) {
   const { t } = useTranslation()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -294,8 +307,10 @@ function SpreadsheetItemActions({
   }
 
   return (
-    <SpreadsheetCell>
-      <div className="flex items-start justify-end gap-1">
+    <div className="flex items-start justify-end gap-1">
+      {onOpenMap && item.latitude !== null && item.longitude !== null && (
+        <MapLocateButton label={t("tripMap.locate")} onClick={onOpenMap} />
+      )}
         {hasValidMapsUrl ? (
           <a
             aria-label={t("tripDetails.openGoogleMaps")}
@@ -354,6 +369,16 @@ function SpreadsheetItemActions({
                 <>
                   <button
                     className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-on-surface hover:bg-surface-muted"
+                    onClick={() => {
+                      setIsMenuOpen(false)
+                      onMoveToBackup()
+                    }}
+                    type="button"
+                  >
+                    {t("backup.moveToBackup")}
+                  </button>
+                  <button
+                    className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-on-surface hover:bg-surface-muted"
                     onClick={startEditingMaps}
                     type="button"
                   >
@@ -408,17 +433,18 @@ function SpreadsheetItemActions({
             </div>
           )}
         </div>
-      </div>
-    </SpreadsheetCell>
+    </div>
   )
 }
 
 export function TripSpreadsheetPage({
   accessToken,
   onTripDeleted,
+  onOpenMap,
   onReorderPendingChange,
   onTripUpdated,
   trip,
+  userId,
   showDetails,
 }: TripSpreadsheetPageProps) {
   const { i18n, t } = useTranslation()
@@ -436,6 +462,7 @@ export function TripSpreadsheetPage({
   const [draggedItem, setDraggedItem] = useState<SpreadsheetDraggedItem | null>(null)
   const [dropTarget, setDropTargetState] = useState<SpreadsheetDropTarget | null>(null)
   const [pendingDeletion, setPendingDeletion] = useState<PendingDeletion | null>(null)
+  const [savingPreferenceKey, setSavingPreferenceKey] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [reorderError, setReorderError] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
@@ -713,6 +740,94 @@ export function TripSpreadsheetPage({
       return getErrorMessage(reason)
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  async function moveItemToBackup(type: ItineraryRow["type"], item: Activity | Meal) {
+    setIsSaving(true)
+    setSaveError(null)
+
+    try {
+      if (type === "meal") {
+        const savedMeal = await updateMeal(accessToken, trip.id, item.id, { isBackup: true })
+        onTripUpdated(replaceMealInTrip(trip, savedMeal))
+      } else {
+        const savedActivity = await updateActivity(accessToken, trip.id, item.id, {
+          isBackup: true,
+        })
+        onTripUpdated({
+          ...trip,
+          backupActivities: [...trip.backupActivities, savedActivity],
+          days: trip.days.map((day) => ({
+            ...day,
+            activities: day.activities.filter((activity) => activity.id !== item.id),
+          })),
+        })
+      }
+    } catch (reason: unknown) {
+      setSaveError(getErrorMessage(reason))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function handlePreferenceChange(
+    itemType: TripItemType,
+    itemId: string,
+    value: TripItemPreferenceValue | null,
+  ) {
+    const preferenceKey = `${itemType}:${itemId}`
+    const previousPreferences = trip.preferences
+    const nextPreferences = previousPreferences.filter(
+      (preference) =>
+        !(
+          preference.userId === userId &&
+          preference.itemType === itemType &&
+          preference.itemId === itemId
+        ),
+    )
+
+    if (value !== null) {
+      nextPreferences.push({
+        id: `optimistic:${preferenceKey}`,
+        tripId: trip.id,
+        userId,
+        itemType,
+        itemId,
+        value,
+        updatedAt: new Date().toISOString(),
+      })
+    }
+
+    setSavingPreferenceKey(preferenceKey)
+    setSaveError(null)
+    onTripUpdated({ ...trip, preferences: nextPreferences })
+
+    try {
+      const savedPreference = await setTripItemPreference(accessToken, trip.id, {
+        itemType,
+        itemId,
+        value,
+      })
+      const reconciledPreferences = nextPreferences.filter(
+        (preference) =>
+          !(
+            preference.userId === userId &&
+            preference.itemType === itemType &&
+            preference.itemId === itemId
+          ),
+      )
+
+      if (savedPreference) {
+        reconciledPreferences.push(savedPreference)
+      }
+
+      onTripUpdated({ ...trip, preferences: reconciledPreferences })
+    } catch (reason: unknown) {
+      onTripUpdated({ ...trip, preferences: previousPreferences })
+      setSaveError(getErrorMessage(reason))
+    } finally {
+      setSavingPreferenceKey(null)
     }
   }
 
@@ -1792,14 +1907,31 @@ export function TripSpreadsheetPage({
                                 </>
                               )}
                               {showWebsite && <SpreadsheetCell>{item.website}</SpreadsheetCell>}
-                              <SpreadsheetItemActions
-                                isBusy={isSaving}
-                                item={item}
-                                onChangeGoogleMapsUrl={(googleMapsUrl) =>
-                                  saveItemGoogleMapsUrl(type, item, googleMapsUrl)
-                                }
-                                onDelete={() => setPendingDeletion({ item, type })}
-                              />
+                              <SpreadsheetCell>
+                                <div className="flex items-start justify-end gap-1">
+                                  <TripItemPreference
+                                    compact
+                                    disabled={savingPreferenceKey === `${type}:${item.id}`}
+                                    itemId={item.id}
+                                    itemType={type}
+                                    onChange={(value) =>
+                                      void handlePreferenceChange(type, item.id, value)
+                                    }
+                                    preferences={trip.preferences}
+                                    userId={userId}
+                                  />
+                                  <SpreadsheetItemActions
+                                    isBusy={isSaving}
+                                    item={item}
+                                    onChangeGoogleMapsUrl={(googleMapsUrl) =>
+                                      saveItemGoogleMapsUrl(type, item, googleMapsUrl)
+                                    }
+                                    onDelete={() => setPendingDeletion({ item, type })}
+                                    onMoveToBackup={() => void moveItemToBackup(type, item)}
+                                    onOpenMap={() => onOpenMap(type, item.id)}
+                                  />
+                                </div>
+                              </SpreadsheetCell>
                             </tr>
                           )
                         })

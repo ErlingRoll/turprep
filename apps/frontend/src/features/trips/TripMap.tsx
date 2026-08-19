@@ -24,6 +24,8 @@ type TripMapProps = {
   ) => Promise<void>
   focusMarker?: TripMapMarker | null
   onFocusMarkerHandled?: () => void
+  fullScreen?: boolean
+  fullScreenToolbar?: ReactNode
 }
 
 const markerDetailsAnimationDuration = 180
@@ -107,6 +109,8 @@ export function TripMap({
   onMarkerLocationSave,
   focusMarker,
   onFocusMarkerHandled,
+  fullScreen = false,
+  fullScreenToolbar,
 }: TripMapProps) {
   const { t } = useTranslation()
   const [isMobileOpen, setIsMobileOpen] = useState(false)
@@ -175,7 +179,7 @@ export function TripMap({
           zoom: 2,
           zoomControl: true,
           zoomControlOptions: {
-            position: google.maps.ControlPosition.TOP_LEFT,
+            position: google.maps.ControlPosition.RIGHT_CENTER,
           },
         })
         mapRef.current = map
@@ -368,6 +372,26 @@ export function TripMap({
     }
   }
 
+  function renderLegend() {
+    return (
+      <>
+        <span className="font-semibold">{t("tripMap.legend")}</span>
+        <span className="flex items-center gap-2">
+          <span className="size-2.5 rounded-full bg-type-activity" />
+          {t("tripMap.activity")}
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="size-2.5 rounded-full bg-type-meal" />
+          {t("tripMap.meal")}
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="size-2.5 rounded-full bg-type-housing" />
+          {t("tripMap.housing")}
+        </span>
+      </>
+    )
+  }
+
   function cancelLocationEdit() {
     if (draftLocation) {
       markerRefs.current
@@ -415,7 +439,9 @@ export function TripMap({
     <>
       <button
         aria-expanded={isMobileOpen}
-        className="fixed bottom-20 left-1/2 z-30 -translate-x-1/2 rounded-full bg-brand px-5 py-3 text-sm font-semibold text-on-brand shadow-card lg:hidden"
+        className={`fixed bottom-20 left-1/2 z-30 -translate-x-1/2 rounded-full bg-brand px-5 py-3 text-sm font-semibold text-on-brand shadow-card ${
+          fullScreen ? "hidden" : "lg:hidden"
+        }`}
         onClick={() => {
           if (markerDetailsCloseTimeoutRef.current !== null) {
             window.clearTimeout(markerDetailsCloseTimeoutRef.current)
@@ -430,56 +456,92 @@ export function TripMap({
         {t("tripMap.open")}
       </button>
       <section
-        className={`${
-          isMobileOpen
-            ? "fixed inset-0 z-50 flex h-dvh flex-col rounded-none"
-            : "hidden rounded-2xl lg:flex"
-        } border border-border-card bg-surface p-3 pb-24 lg:sticky lg:top-24 lg:h-[calc(100dvh-24rem)] lg:min-h-96 lg:flex-col lg:pb-3`}
+        className={
+          fullScreen
+            ? "fixed inset-0 z-40 flex h-dvh flex-col rounded-none border-0 bg-surface p-0"
+            : `${
+                isMobileOpen
+                  ? "fixed inset-0 z-50 flex h-dvh flex-col rounded-none"
+                  : "hidden rounded-2xl lg:flex"
+              } border border-border-card bg-surface p-3 pb-24 lg:sticky lg:top-24 lg:h-[calc(100dvh-24rem)] lg:min-h-96 lg:flex-col lg:pb-3`
+        }
       >
-        <div className="hidden shrink-0 items-center justify-between gap-3 px-1 lg:flex">
-          <div className="flex items-center gap-3">
-            <h2 className="font-semibold text-brand">{t("tripMap.title")}</h2>
-            <span className="text-xs text-muted">
-              {t("tripMap.locations", { count: markers.length })}
-            </span>
-          </div>
-          {onMarkerLocationSave && (
+        <div
+          className={
+            fullScreen
+              ? "absolute left-3 top-3 z-20 flex max-w-[calc(100%-1.5rem)] flex-col gap-1.5 rounded-xl bg-surface/95 p-4 shadow-card backdrop-blur-sm"
+              : "hidden shrink-0 items-center justify-between gap-3 px-1 lg:flex"
+          }
+        >
+          {fullScreenToolbar}
+          <div
+            className={
+              fullScreen
+                ? "flex flex-wrap items-center justify-between gap-2 border-t border-border-divider pt-1"
+                : "flex items-center justify-between gap-3"
+            }
+          >
+            <div className="flex items-center gap-3">
+              <h2 className="font-semibold text-brand">{t("tripMap.title")}</h2>
+              <span className="text-xs text-muted">
+                {t("tripMap.locations", { count: markers.length })}
+              </span>
+            </div>
             <div className="flex items-center gap-2">
-              {isLocationEditMode ? (
-                <>
+              {onMarkerLocationSave &&
+                (isLocationEditMode ? (
+                  <>
+                    <button
+                      className="rounded-lg px-2 py-1 text-xs font-semibold text-muted hover:bg-surface-muted disabled:opacity-60"
+                      disabled={isSavingLocation}
+                      onClick={cancelLocationEdit}
+                      type="button"
+                    >
+                      {t("common.cancel")}
+                    </button>
+                    <button
+                      className="rounded-lg bg-brand-surface px-2 py-1 text-xs font-semibold text-on-brand hover:bg-brand-surface-hover disabled:opacity-60"
+                      disabled={!draftLocation || isSavingLocation}
+                      onClick={() => void saveLocationEdit()}
+                      type="button"
+                    >
+                      {isSavingLocation ? t("common.saving") : t("tripMap.saveLocation")}
+                    </button>
+                  </>
+                ) : (
                   <button
-                    className="rounded-lg px-2 py-1 text-xs font-semibold text-muted hover:bg-surface-muted disabled:opacity-60"
-                    disabled={isSavingLocation}
-                    onClick={cancelLocationEdit}
+                    className="rounded-lg px-2 py-1 text-xs font-semibold text-on-surface hover:bg-surface-muted"
+                    onClick={() => {
+                      setLocationEditError(null)
+                      setIsLocationEditMode(true)
+                    }}
                     type="button"
                   >
-                    {t("common.cancel")}
+                    {t("tripMap.editLocations")}
                   </button>
-                  <button
-                    className="rounded-lg bg-brand-surface px-2 py-1 text-xs font-semibold text-on-brand hover:bg-brand-surface-hover disabled:opacity-60"
-                    disabled={!draftLocation || isSavingLocation}
-                    onClick={() => void saveLocationEdit()}
-                    type="button"
-                  >
-                    {isSavingLocation ? t("common.saving") : t("tripMap.saveLocation")}
-                  </button>
-                </>
-              ) : (
+                ))}
+              {fullScreen && (
                 <button
                   className="rounded-lg px-2 py-1 text-xs font-semibold text-on-surface hover:bg-surface-muted"
-                  onClick={() => {
-                    setLocationEditError(null)
-                    setIsLocationEditMode(true)
-                  }}
+                  onClick={resetMapView}
                   type="button"
                 >
-                  {t("tripMap.editLocations")}
+                  {t("tripMap.reset")}
                 </button>
               )}
             </div>
+          </div>
+          {fullScreen && (
+            <div className="flex flex-wrap items-center gap-3 border-t border-border-divider pt-1 text-xs text-muted">
+              {renderLegend()}
+            </div>
           )}
         </div>
-        <div className="relative mt-0 min-h-0 flex-1 overflow-hidden rounded-xl lg:mt-3">
+        <div
+          className={`relative min-h-0 flex-1 overflow-hidden ${
+            fullScreen ? "rounded-none" : "mt-0 rounded-xl lg:mt-3"
+          }`}
+        >
           <div className="h-full min-h-72 w-full" ref={containerRef} />
           {mapLoadError && (
             <div className="absolute inset-0 grid place-items-center bg-surface-muted/90 p-6 text-center text-sm text-error">
@@ -487,7 +549,11 @@ export function TripMap({
             </div>
           )}
           {isLocationEditMode && (
-            <div className="absolute left-3 top-14 z-10 max-w-64 rounded-lg bg-surface/95 px-3 py-2 text-xs text-on-surface shadow-card">
+            <div
+              className={`absolute left-3 z-10 max-w-64 rounded-lg bg-surface/95 px-3 py-2 text-xs text-on-surface shadow-card ${
+                fullScreen ? "top-32" : "top-14"
+              }`}
+            >
               {draftLocation ? t("tripMap.locationReadyToSave") : t("tripMap.locationEditHelp")}
               {locationEditError && (
                 <p className="mt-1 text-error-strong" role="alert">
@@ -497,34 +563,30 @@ export function TripMap({
             </div>
           )}
           <button
-            className="absolute right-3 top-3 z-10 rounded-lg bg-surface px-3 py-2 text-xs font-semibold text-on-surface shadow-card hover:bg-surface-muted"
+            className={`absolute right-3 z-10 rounded-lg bg-surface px-3 py-2 text-xs font-semibold text-on-surface shadow-card hover:bg-surface-muted ${
+              fullScreen ? "hidden" : "top-3"
+            }`}
             onClick={resetMapView}
             type="button"
           >
             {t("tripMap.reset")}
           </button>
-          <div className="absolute bottom-3 left-3 z-10 grid gap-1 rounded-lg bg-surface/95 px-3 py-2 text-xs text-on-surface shadow-card">
-            <span className="font-semibold">{t("tripMap.legend")}</span>
-            <span className="flex items-center gap-2">
-              <span className="size-2.5 rounded-full bg-type-activity" />
-              {t("tripMap.activity")}
-            </span>
-            <span className="flex items-center gap-2">
-              <span className="size-2.5 rounded-full bg-type-meal" />
-              {t("tripMap.meal")}
-            </span>
-            <span className="flex items-center gap-2">
-              <span className="size-2.5 rounded-full bg-type-housing" />
-              {t("tripMap.housing")}
-            </span>
-          </div>
+          {!fullScreen && (
+            <div className="absolute bottom-3 left-3 z-10 grid gap-1 rounded-lg bg-surface/95 px-3 py-2 text-xs text-on-surface shadow-card">
+              {renderLegend()}
+            </div>
+          )}
           {markers.length === 0 && (
             <div className="absolute inset-0 grid place-items-center bg-surface-muted/80 p-6 text-center text-sm text-muted">
               {t("tripMap.noLocations")}
             </div>
           )}
         </div>
-        <div className="order-first mt-3 flex shrink-0 items-center justify-between gap-3 px-1 lg:hidden">
+        <div
+          className={`order-first mt-3 flex shrink-0 items-center justify-between gap-3 px-1 lg:hidden ${
+            fullScreen ? "hidden" : ""
+          }`}
+        >
           <div className="flex items-center gap-3">
             <h2 className="font-semibold text-brand">{t("tripMap.title")}</h2>
             <span className="text-xs text-muted">

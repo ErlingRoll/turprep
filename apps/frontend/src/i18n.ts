@@ -111,6 +111,7 @@ const resources = {
       },
       tripMap: {
         activity: "Aktivitet",
+        backToPlan: "Tilbake til planen",
         close: "Lukk kart",
         closeDetails: "Lukk stedsdetaljer",
         housing: "Overnatting",
@@ -128,6 +129,7 @@ const resources = {
         locationSaveFailed: "Kunne ikke lagre den nye posisjonen.",
         reset: "Tilbakestill kart",
         saveLocation: "Lagre posisjon",
+        showBackup: "Vis forslag",
         title: "Kart",
       },
       backup: {
@@ -465,6 +467,7 @@ const resources = {
       },
       tripMap: {
         activity: "Activity",
+        backToPlan: "Back to plan",
         close: "Close map",
         closeDetails: "Close location details",
         housing: "Accommodation",
@@ -482,6 +485,7 @@ const resources = {
         locationSaveFailed: "Could not save the new position.",
         reset: "Reset map",
         saveLocation: "Save position",
+        showBackup: "Show suggestions",
         title: "Map",
       },
       backup: {

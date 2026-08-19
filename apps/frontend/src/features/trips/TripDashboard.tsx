@@ -8,6 +8,7 @@ import { formatDateRange } from "../../lib/date-format"
 import { getSupabaseClient } from "../../lib/supabase"
 import { TripDetails } from "./TripDetails"
 import { TripBackupPage } from "./TripBackupPage"
+import { TripMapPage } from "./TripMapPage"
 import { TripSpreadsheetPage } from "./TripSpreadsheetPage"
 import { TripForm } from "./TripForm"
 import { TravelMode } from "./TravelMode"
@@ -51,7 +52,8 @@ export function TripDashboard({ session }: TripDashboardProps) {
   const { tripId } = useParams<{ tripId: string }>()
   const isTravelMode = location.pathname.endsWith("/travel")
   const isBackupMode = location.pathname.endsWith("/backup")
-  const isPlanMode = !isTravelMode && !isBackupMode
+  const isMapMode = location.pathname.endsWith("/map")
+  const isPlanMode = !isTravelMode && !isBackupMode && !isMapMode
   const hasValidTripId = Boolean(tripId && tripId !== ":tripId")
   const isDesktop = useIsDesktop()
   const [trips, setTrips] = useState<Trip[]>([])
@@ -142,7 +144,8 @@ export function TripDashboard({ session }: TripDashboardProps) {
     onError: setDetailsError,
     onTripUpdated: handleTripUpdated,
     tripId:
-      hasValidTripId && (isTravelMode || isBackupMode || (isPlanMode && isDesktop))
+      hasValidTripId &&
+      (isTravelMode || isBackupMode || isMapMode || (isPlanMode && isDesktop))
         ? tripId
         : undefined,
   })
@@ -160,6 +163,10 @@ export function TripDashboard({ session }: TripDashboardProps) {
     setTrips((currentTrips) => [trip, ...currentTrips])
     navigate(`/trips/${trip.id}`)
     setIsCreating(false)
+  }
+
+  function handleOpenMap(itemType: "activity" | "meal", itemId: string) {
+    navigate(`/trips/${tripId}/map?focus=${itemType}:${itemId}`)
   }
 
   function handleTripUpdated(updatedTrip: TripDetail) {
@@ -213,6 +220,25 @@ export function TripDashboard({ session }: TripDashboardProps) {
         daySelection={daySelection}
         showDetails={showItemDetails}
       />
+    )
+  }
+
+  if (isMapMode) {
+    return (
+      <main className="h-dvh overflow-hidden bg-page text-ink">
+        {selectedTrip ? (
+          <TripMapPage
+            accessToken={session.access_token}
+            fullScreen
+            onTripUpdated={handleTripUpdated}
+            trip={selectedTrip}
+          />
+        ) : (
+          <div className="grid h-full place-items-center p-6 text-sm text-muted">
+            {isDetailsLoading ? t("common.loadingTrip") : detailsError}
+          </div>
+        )}
+      </main>
     )
   }
 
@@ -344,10 +370,12 @@ export function TripDashboard({ session }: TripDashboardProps) {
               <TripSpreadsheetPage
                 accessToken={session.access_token}
                 onTripDeleted={handleDeleteTrip}
+                onOpenMap={handleOpenMap}
                 onReorderPendingChange={setIsDesktopReordering}
                 onTripUpdated={handleTripUpdated}
                 showDetails={showItemDetails}
                 trip={selectedTrip}
+                userId={session.user.id}
               />
             ) : (
               renderTripDetails()

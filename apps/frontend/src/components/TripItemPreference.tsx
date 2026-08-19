@@ -12,6 +12,7 @@ type TripItemPreferenceProps = {
   preferences: TripItemPreferenceRecord[]
   userId: string
   disabled?: boolean
+  compact?: boolean
   onChange: (value: TripItemPreferenceValue | null) => void
 }
 
@@ -29,6 +30,7 @@ export function TripItemPreference({
   preferences,
   userId,
   disabled = false,
+  compact = false,
   onChange,
 }: TripItemPreferenceProps) {
   const { t } = useTranslation()
@@ -45,6 +47,56 @@ export function TripItemPreference({
       itemPreferences.filter((preference) => preference.value === value).length,
     ]),
   ) as Record<TripItemPreferenceValue, number>
+
+  if (compact) {
+    return (
+      <div className="relative">
+        <button
+          aria-expanded={isVotingOpen}
+          aria-label={t("tripPreferences.vote")}
+          className="rounded-lg p-2 text-muted hover:bg-surface-muted hover:text-on-surface disabled:opacity-50"
+          disabled={disabled}
+          onClick={() => setIsVotingOpen((isOpen) => !isOpen)}
+          title={t("tripPreferences.vote")}
+          type="button"
+        >
+          <span
+            aria-hidden="true"
+            className={`block size-3 rounded-full ${currentValue ? preferenceClasses[currentValue] : "bg-surface-muted"}`}
+          />
+        </button>
+        {isVotingOpen && (
+          <div className="absolute right-0 top-full z-20 mt-1 grid min-w-32 gap-1 rounded-xl border border-border bg-surface p-1 shadow-popover">
+            {preferenceValues.map((value) => {
+              const isSelected = currentValue === value
+
+              return (
+                <button
+                  aria-pressed={isSelected}
+                  className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-semibold text-muted hover:bg-surface-muted hover:text-on-surface ${
+                    isSelected ? "bg-surface-muted text-on-surface" : ""
+                  }`}
+                  disabled={disabled}
+                  key={value}
+                  onClick={() => {
+                    onChange(isSelected ? null : value)
+                    setIsVotingOpen(false)
+                  }}
+                  type="button"
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`size-2.5 rounded-full ${preferenceClasses[value]}`}
+                  />
+                  {t(`tripPreferences.${value}`)}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   function getPercentage(value: TripItemPreferenceValue) {
     return totalVotes === 0 ? 0 : Math.round((counts[value] / totalVotes) * 100)
