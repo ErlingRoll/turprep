@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import type { Session } from "@supabase/supabase-js"
-import { Navigate, Route, Routes } from "react-router-dom"
+import { Navigate, Route, Routes, useParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { getErrorMessage } from "./lib/errors"
 import { getSupabaseClient } from "./lib/supabase"
@@ -15,6 +15,11 @@ function removeEmptyUrlHash() {
   if (currentUrl.hash === "" && window.location.href.endsWith("#")) {
     window.history.replaceState(null, "", `${currentUrl.pathname}${currentUrl.search}`)
   }
+}
+
+function LegacySpreadsheetRedirect() {
+  const { tripId } = useParams<{ tripId: string }>()
+  return <Navigate replace to={tripId ? `/trips/${tripId}` : "/"} />
 }
 
 export default function App() {
@@ -95,7 +100,7 @@ export default function App() {
       <Route element={<TripDashboard session={session} />} path="/trips/:tripId" />
       <Route element={<TripDashboard session={session} />} path="/trips/:tripId/travel" />
       <Route element={<TripDashboard session={session} />} path="/trips/:tripId/backup" />
-      <Route element={<TripDashboard session={session} />} path="/trips/:tripId/spreadsheet" />
+      <Route element={<LegacySpreadsheetRedirect />} path="/trips/:tripId/spreadsheet" />
       <Route element={<Navigate replace to="/" />} path="*" />
     </Routes>
   )

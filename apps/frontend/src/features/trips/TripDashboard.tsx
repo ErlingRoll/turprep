@@ -33,7 +33,8 @@ export function TripDashboard({ session }: TripDashboardProps) {
   const { tripId } = useParams<{ tripId: string }>()
   const isTravelMode = location.pathname.endsWith("/travel")
   const isBackupMode = location.pathname.endsWith("/backup")
-  const isSpreadsheetMode = location.pathname.endsWith("/spreadsheet")
+  const isPlanMode = !isTravelMode && !isBackupMode
+  const hasValidTripId = Boolean(tripId && tripId !== ":tripId")
   const [trips, setTrips] = useState<Trip[]>([])
   const [selectedTrip, setSelectedTrip] = useState<TripDetail | null>(null)
   const [search, setSearch] = useState("")
@@ -77,7 +78,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
   }, [session.access_token])
 
   useEffect(() => {
-    if (!tripId) {
+    if (!tripId || tripId === ":tripId") {
       setSelectedTrip(null)
       setDetailsError(null)
       return
@@ -107,14 +108,20 @@ export function TripDashboard({ session }: TripDashboardProps) {
     return () => {
       isMounted = false
     }
-  }, [tripId, session.access_token])
+  }, [hasValidTripId, tripId, session.access_token])
+
+  useEffect(() => {
+    if (tripId === ":tripId") {
+      navigate("/", { replace: true })
+    }
+  }, [navigate, tripId])
 
   useTripRealtime({
     accessToken: session.access_token,
     isPaused: () => false,
     onError: setDetailsError,
     onTripUpdated: handleTripUpdated,
-    tripId: isTravelMode || isBackupMode || isSpreadsheetMode ? tripId : undefined,
+    tripId: hasValidTripId && (isPlanMode || isTravelMode || isBackupMode) ? tripId : undefined,
   })
 
   const filteredTrips = useMemo(() => {
@@ -217,7 +224,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
         </div>
       )}
 
-      {tripId ? (
+      {hasValidTripId ? (
         <section className="mx-auto max-w-7xl px-5 pb-12 pt-6 sm:px-8 sm:pt-10">
           <button
             className="inline-flex items-center gap-2 rounded-xl px-2 py-2 text-sm font-semibold text-muted transition hover:bg-surface-muted hover:text-on-surface"
@@ -233,9 +240,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
                 ? t("travelMode.title")
                 : isBackupMode
                   ? t("tripModes.backup")
-                  : isSpreadsheetMode
-                    ? t("tripModes.spreadsheet")
-                    : t("dashboard.plan")}
+                  : t("dashboard.plan")}
             </h1>
             {selectedTrip &&
               (selectedTrip.itemDetailVisibility.showPrice ||
@@ -255,15 +260,13 @@ export function TripDashboard({ session }: TripDashboardProps) {
           )}
           <nav
             aria-label={t("tripModes.plan")}
-            className={`mt-5 grid grid-cols-3 rounded-xl bg-surface-muted p-1 lg:grid-cols-4 ${
-              isSpreadsheetMode ? "" : "lg:sticky lg:top-0 lg:z-20"
+            className={`mt-5 grid grid-cols-3 rounded-xl bg-surface-muted p-1 ${
+              isPlanMode ? "" : "lg:sticky lg:top-0 lg:z-20"
             }`}
           >
             <Link
               className={`rounded-lg px-3 py-2 text-center text-sm font-semibold ${
-                !isTravelMode && !isBackupMode && !isSpreadsheetMode
-                  ? "bg-surface text-on-surface shadow-sm"
-                  : "text-muted"
+                isPlanMode ? "bg-surface text-on-surface shadow-sm" : "text-muted"
               }`}
               to={`/trips/${tripId}`}
             >
@@ -285,14 +288,6 @@ export function TripDashboard({ session }: TripDashboardProps) {
             >
               {t("tripModes.travel")}
             </Link>
-            <Link
-              className={`hidden rounded-lg px-3 py-2 text-center text-sm font-semibold lg:block ${
-                isSpreadsheetMode ? "bg-surface text-on-surface shadow-sm" : "text-muted"
-              }`}
-              to={`/trips/${tripId}/spreadsheet`}
-            >
-              {t("tripModes.spreadsheet")}
-            </Link>
           </nav>
           {isTravelMode && selectedTrip ? (
             <TravelMode showDetails={showItemDetails} trip={selectedTrip} />
@@ -305,7 +300,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
               trip={selectedTrip}
               userId={session.user.id}
             />
-          ) : isSpreadsheetMode && selectedTrip ? (
+          ) : isPlanMode && selectedTrip ? (
             <TripSpreadsheetPage showDetails={showItemDetails} trip={selectedTrip} />
           ) : (
             <TripDetails
