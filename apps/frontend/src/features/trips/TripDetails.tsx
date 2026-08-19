@@ -33,6 +33,7 @@ import { formatDate } from "../../lib/date-format"
 import { shiftDate } from "../../lib/trip-dates"
 import { getDefaultCurrency } from "../../lib/currency"
 import { TripAuxiliaryDetails } from "./TripAuxiliaryDetails"
+import { replaceActivityInTrip, replaceHousingStayInTrip, replaceMealInTrip } from "./trip-state"
 import { TripSettings } from "./TripSettings"
 import { DayItemForm } from "./DayItemForm"
 import { DayItemList } from "./DayItemList"
@@ -472,12 +473,7 @@ export function TripDetails({
           latitude,
           longitude,
         })
-        onTripUpdated({
-          ...currentTrip,
-          housingStays: currentTrip.housingStays.map((currentStay) =>
-            currentStay.id === savedStay.id ? savedStay : currentStay,
-          ),
-        })
+        onTripUpdated(replaceHousingStayInTrip(currentTrip, savedStay))
         return
       }
 
@@ -491,12 +487,7 @@ export function TripDetails({
           latitude,
           longitude,
         })
-        onTripUpdated({
-          ...currentTrip,
-          meals: currentTrip.meals.map((currentMeal) =>
-            currentMeal.id === savedMeal.id ? savedMeal : currentMeal,
-          ),
-        })
+        onTripUpdated(replaceMealInTrip(currentTrip, savedMeal))
         return
       }
 
@@ -512,19 +503,7 @@ export function TripDetails({
         latitude,
         longitude,
       })
-      onTripUpdated({
-        ...currentTrip,
-        days: currentTrip.days.map((currentDay) =>
-          currentDay.date === day.date
-            ? {
-                ...currentDay,
-                activities: currentDay.activities.map((currentActivity) =>
-                  currentActivity.id === savedActivity.id ? savedActivity : currentActivity,
-                ),
-              }
-            : currentDay,
-        ),
-      })
+      onTripUpdated(replaceActivityInTrip(currentTrip, savedActivity))
     } catch (reason: unknown) {
       const message = getErrorMessage(reason)
       setActivityError(message)
@@ -535,10 +514,7 @@ export function TripDetails({
   async function handleSaveDayItemDetails(record: DayItemRecord, details: ItemDetailValues) {
     if (record.itemType === "meal") {
       const savedMeal = await updateMeal(accessToken, currentTrip.id, record.item.id, details)
-      onTripUpdated({
-        ...currentTrip,
-        meals: currentTrip.meals.map((meal) => (meal.id === savedMeal.id ? savedMeal : meal)),
-      })
+      onTripUpdated(replaceMealInTrip(currentTrip, savedMeal))
       return
     }
 
@@ -550,29 +526,12 @@ export function TripDetails({
     }
 
     const savedActivity = await updateActivity(accessToken, currentTrip.id, record.item.id, details)
-    onTripUpdated({
-      ...currentTrip,
-      days: currentTrip.days.map((currentDay) =>
-        currentDay.date === day.date
-          ? {
-              ...currentDay,
-              activities: currentDay.activities.map((activity) =>
-                activity.id === savedActivity.id ? savedActivity : activity,
-              ),
-            }
-          : currentDay,
-      ),
-    })
+    onTripUpdated(replaceActivityInTrip(currentTrip, savedActivity))
   }
 
   async function handleSaveHousingDetails(stay: HousingStay, details: ItemDetailValues) {
     const savedStay = await updateHousingStay(accessToken, currentTrip.id, stay.id, details)
-    onTripUpdated({
-      ...currentTrip,
-      housingStays: currentTrip.housingStays.map((currentStay) =>
-        currentStay.id === savedStay.id ? savedStay : currentStay,
-      ),
-    })
+    onTripUpdated(replaceHousingStayInTrip(currentTrip, savedStay))
   }
 
   function resetActivityForm() {
@@ -693,12 +652,7 @@ export function TripDetails({
       const saved = await updateMeal(accessToken, currentTrip.id, meal.id, {
         isBackup: true,
       })
-      onTripUpdated({
-        ...currentTrip,
-        meals: currentTrip.meals.map((currentMeal) =>
-          currentMeal.id === meal.id ? saved : currentMeal,
-        ),
-      })
+      onTripUpdated(replaceMealInTrip(currentTrip, saved))
     } catch (reason: unknown) {
       setActivityError(getErrorMessage(reason))
     }
@@ -710,12 +664,7 @@ export function TripDetails({
       const saved = await updateHousingStay(accessToken, currentTrip.id, stay.id, {
         isBackup: true,
       })
-      onTripUpdated({
-        ...currentTrip,
-        housingStays: currentTrip.housingStays.map((currentStay) =>
-          currentStay.id === stay.id ? saved : currentStay,
-        ),
-      })
+      onTripUpdated(replaceHousingStayInTrip(currentTrip, saved))
     } catch (reason: unknown) {
       setActivityError(getErrorMessage(reason))
     }

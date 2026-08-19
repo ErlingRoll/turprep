@@ -95,8 +95,7 @@ const resources = {
         notes: "Notater",
         price: "Pris",
         prototype: "Prototype",
-        readOnlyDescription:
-          "Første versjon er skrivebeskyttet. Redigering og liming kommer i neste steg.",
+        readOnlyDescription: "Rediger aktiviteter og måltider direkte i planen.",
         rows: "{{count}} rader",
         start: "Start",
         title: "Tittel",
@@ -444,7 +443,7 @@ const resources = {
         notes: "Notes",
         price: "Price",
         prototype: "Prototype",
-        readOnlyDescription: "The first version is read-only. Editing and pasting will come next.",
+        readOnlyDescription: "Edit activities and meals directly in the plan.",
         rows: "{{count}} rows",
         start: "Start",
         title: "Title",

@@ -340,7 +340,12 @@ export function TripDashboard({ session }: TripDashboardProps) {
             />
           ) : isPlanMode && selectedTrip ? (
             isDesktop ? (
-              <TripSpreadsheetPage showDetails={showItemDetails} trip={selectedTrip} />
+              <TripSpreadsheetPage
+                accessToken={session.access_token}
+                onTripUpdated={handleTripUpdated}
+                showDetails={showItemDetails}
+                trip={selectedTrip}
+              />
             ) : (
               renderTripDetails()
             )
