@@ -96,7 +96,7 @@ function getReorderedItemStartTime(trip: TripDetail, item: ReorderDayItemInput) 
     return null
   }
 
-  const time = dayItem.startTime ?? dayItem.endTime
+  const time = item.startTime !== undefined ? item.startTime : dayItem.startTime ?? dayItem.endTime
   return time?.trim() || null
 }
 

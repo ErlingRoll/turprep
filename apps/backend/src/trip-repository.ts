@@ -1733,11 +1733,20 @@ export function createSupabaseTripRepository(): TripRepository {
         parsedInput.items
           .filter((item) => item.itemType === "activity")
           .map(async (item) => {
+            const currentActivity = currentActivities.find(
+              (activity) => activity.id === item.itemId,
+            )
             const { data, error } = await client
               .from("activities")
               .update({
                 trip_date: item.tripDate,
                 sort_order: item.sortOrder,
+                ...(item.startTime !== undefined
+                  ? { start_time: item.startTime }
+                  : { start_time: currentActivity?.startTime }),
+                ...(item.endTime !== undefined
+                  ? { end_time: item.endTime }
+                  : { end_time: currentActivity?.endTime }),
               })
               .eq("trip_id", tripId)
               .eq("id", item.itemId)
@@ -1755,11 +1764,18 @@ export function createSupabaseTripRepository(): TripRepository {
         parsedInput.items
           .filter((item) => item.itemType === "meal")
           .map(async (item) => {
+            const currentMeal = currentMeals.find((meal) => meal.id === item.itemId)
             const { data, error } = await client
               .from("meals")
               .update({
                 trip_date: item.tripDate,
                 sort_order: item.sortOrder,
+                ...(item.startTime !== undefined
+                  ? { start_time: item.startTime }
+                  : { start_time: currentMeal?.startTime }),
+                ...(item.endTime !== undefined
+                  ? { end_time: item.endTime }
+                  : { end_time: currentMeal?.endTime }),
               })
               .eq("trip_id", tripId)
               .eq("id", item.itemId)

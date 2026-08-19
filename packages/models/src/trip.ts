@@ -340,6 +340,8 @@ export const ReorderDayItemInputSchema = z.object({
   itemId: z.string().min(1),
   tripDate: DateOnlySchema,
   sortOrder: z.number().int().nonnegative(),
+  startTime: TimeOnlySchema.nullable().optional(),
+  endTime: TimeOnlySchema.nullable().optional(),
 })
 
 export const ReorderDayItemsInputSchema = z.object({

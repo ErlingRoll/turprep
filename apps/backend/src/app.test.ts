@@ -1245,6 +1245,34 @@ test("day item reorder rejects timed items in reverse order", async () => {
   assert.match(response.body.message, /ordered by start time/i)
 })
 
+test("day item reorder accepts swapped timed slots", async () => {
+  const response = await request(createTestApp(undefined, timedTripDetail))
+    .patch("/api/trips/trip-1/day-items/reorder")
+    .set("Authorization", "Bearer valid-token")
+    .send({
+      items: [
+        {
+          itemType: "activity",
+          itemId: "activity-2",
+          tripDate: "2026-08-11",
+          sortOrder: 0,
+          startTime: "10:00",
+          endTime: "12:00",
+        },
+        {
+          itemType: "activity",
+          itemId: "activity-1",
+          tripDate: "2026-08-11",
+          sortOrder: 1,
+          startTime: "18:00",
+          endTime: "20:00",
+        },
+      ],
+    })
+
+  assert.equal(response.status, 200)
+})
+
 test("day item reorder ignores all-day items when validating timed order", async () => {
   const response = await request(createTestApp(undefined, allDayTripDetail))
     .patch("/api/trips/trip-1/day-items/reorder")

@@ -4,9 +4,11 @@ import {
   updateActivity,
   updateHousingStay,
   updateMeal,
+  reorderDayItems,
   type Activity,
   type HousingStay,
   type Meal,
+  type ReorderDayItemInput,
   type TripDetail,
 } from "../../api"
 import { DatePicker } from "../../components/DatePicker"
@@ -97,6 +99,62 @@ function getItemDraft(item: Activity | Meal): ItemDraft {
   }
 }
 
+type ItemTimeUpdate = {
+  endTime: string | null
+  startTime: string | null
+}
+
+function getTimeMinutes(time: string) {
+  const [hours, minutes] = time.split(":").map(Number)
+  return hours * 60 + minutes
+}
+
+function formatTimeMinutes(totalMinutes: number) {
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`
+}
+
+function getTimeAnchor(item: Activity | Meal) {
+  if (item.allDay) {
+    return null
+  }
+
+  return item.startTime ?? item.endTime
+}
+
+function rebaseItemTime(item: Activity | Meal, startTime: string): ItemTimeUpdate | null {
+  if (!getTimeAnchor(item)) {
+    return null
+  }
+
+  if (!item.startTime) {
+    return {
+      endTime: startTime,
+      startTime: null,
+    }
+  }
+
+  if (!item.endTime) {
+    return {
+      endTime: null,
+      startTime,
+    }
+  }
+
+  const duration = getTimeMinutes(item.endTime) - getTimeMinutes(item.startTime)
+  const endMinutes = getTimeMinutes(startTime) + duration
+
+  if (endMinutes > 23 * 60 + 59) {
+    return null
+  }
+
+  return {
+    endTime: formatTimeMinutes(endMinutes),
+    startTime,
+  }
+}
+
 function getItineraryRows(trip: TripDetail, date: string): ItineraryRow[] {
   const day = trip.days.find((currentDay) => currentDay.date === date)
   const meals = trip.meals.filter((meal) => !meal.isBackup && meal.tripDate === date)
@@ -146,7 +204,9 @@ export function TripSpreadsheetPage({
   const [housingEditingKey, setHousingEditingKey] = useState<string | null>(null)
   const [housingDraft, setHousingDraft] = useState<HousingDraft | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [isReordering, setIsReordering] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [reorderError, setReorderError] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const showPrice = showDetails && trip.itemDetailVisibility.showPrice
   const showWebsite = showDetails && trip.itemDetailVisibility.showWebsite
@@ -178,6 +238,102 @@ export function TripSpreadsheetPage({
     return rowCounts.slice(startIndex, endIndex).reduce((total, count) => total + count, 0)
   }
   const itineraryColumnCount = 7 + (showPrice ? 2 : 0) + (showWebsite ? 1 : 0)
+
+  function getReorderInput(nextTrip: TripDetail): ReorderDayItemInput[] {
+    return nextTrip.days.flatMap((day) =>
+      getItineraryRows(nextTrip, day.date).map(({ item, type }, sortOrder) => ({
+        itemId: item.id,
+        itemType: type,
+        tripDate: day.date,
+        sortOrder,
+        startTime: item.startTime,
+        endTime: item.endTime,
+      })),
+    )
+  }
+
+  async function moveItineraryItem(dayDate: string, itemIndex: number, direction: -1 | 1) {
+    if (isReordering) {
+      return
+    }
+
+    const rows = getItineraryRows(trip, dayDate)
+    const targetIndex = itemIndex + direction
+    if (targetIndex < 0 || targetIndex >= rows.length) {
+      return
+    }
+
+    const movedRow = rows[itemIndex]
+    const targetRow = rows[targetIndex]
+    const movedAnchor = getTimeAnchor(movedRow.item)
+    const targetAnchor = getTimeAnchor(targetRow.item)
+    const timeUpdates = new Map<string, ItemTimeUpdate>()
+
+    if (movedAnchor && targetAnchor) {
+      const movedTime = rebaseItemTime(movedRow.item, targetAnchor)
+      const targetTime = rebaseItemTime(targetRow.item, movedAnchor)
+
+      if (!movedTime || !targetTime) {
+        setReorderError(t("spreadsheet.reorderTimeRangeError"))
+        return
+      }
+
+      timeUpdates.set(`${movedRow.type}:${movedRow.item.id}`, movedTime)
+      timeUpdates.set(`${targetRow.type}:${targetRow.item.id}`, targetTime)
+    }
+
+    const reorderedRows = [...rows]
+    reorderedRows.splice(itemIndex, 1)
+    reorderedRows.splice(targetIndex, 0, movedRow)
+    const sortOrderByItemId = new Map(
+      reorderedRows.map(({ item }, sortOrder) => [item.id, sortOrder]),
+    )
+    const optimisticTrip: TripDetail = {
+      ...trip,
+      days: trip.days.map((day) =>
+        day.date === dayDate
+          ? {
+              ...day,
+              activities: day.activities.map((activity) => {
+                const sortOrder = sortOrderByItemId.get(activity.id)
+                const timeUpdate = timeUpdates.get(`activity:${activity.id}`)
+                return {
+                  ...activity,
+                  ...(sortOrder === undefined ? {} : { sortOrder }),
+                  ...(timeUpdate ?? {}),
+                }
+              }),
+            }
+          : day,
+      ),
+      meals: trip.meals.map((meal) => {
+        if (meal.tripDate !== dayDate) {
+          return meal
+        }
+
+        const sortOrder = sortOrderByItemId.get(meal.id)
+        const timeUpdate = timeUpdates.get(`meal:${meal.id}`)
+        return {
+          ...meal,
+          ...(sortOrder === undefined ? {} : { sortOrder }),
+          ...(timeUpdate ?? {}),
+        }
+      }),
+    }
+
+    setIsReordering(true)
+    setReorderError(null)
+    onTripUpdated(optimisticTrip)
+
+    try {
+      await reorderDayItems(accessToken, trip.id, getReorderInput(optimisticTrip))
+    } catch (reason: unknown) {
+      setReorderError(getErrorMessage(reason))
+      onTripUpdated(trip)
+    } finally {
+      setIsReordering(false)
+    }
+  }
 
   function startEditing(type: ItineraryRow["type"], item: Activity | Meal, field: EditableField) {
     if (isSaving) {
@@ -409,6 +565,7 @@ export function TripSpreadsheetPage({
             trip={trip}
           />
         )}
+        {reorderError && <p className="mt-3 text-sm text-error">{reorderError}</p>}
 
         <div className="relative left-1/2 mt-5 w-screen -translate-x-1/2 px-2">
           <div className="mx-auto w-fit rounded-2xl border border-border-card bg-surface">
@@ -716,7 +873,7 @@ export function TripSpreadsheetPage({
                           </td>
                         </tr>
                       ) : (
-                        rows.map(({ item, type }) => {
+                        rows.map(({ item, type }, itemIndex) => {
                           const itemKey = `${type}:${item.id}`
                           const activeField = editingFieldKey?.startsWith(`${itemKey}:`)
                             ? (editingFieldKey.slice(itemKey.length + 1) as EditableField)
@@ -751,16 +908,44 @@ export function TripSpreadsheetPage({
                                 {formatLongDate(item.tripDate ?? day.date)}
                               </SpreadsheetCell>
                               <SpreadsheetCell>
-                                <span className="inline-flex items-center gap-2">
-                                  <span
-                                    aria-hidden="true"
-                                    className={`size-2.5 rounded-full ${
-                                      type === "activity" ? "bg-type-activity" : "bg-type-meal"
-                                    }`}
-                                  />
-                                  {type === "activity"
-                                    ? t("spreadsheet.activity")
-                                    : t("spreadsheet.meal")}
+                                <span className="flex items-center justify-between gap-2">
+                                  <span className="inline-flex items-center gap-2">
+                                    <span
+                                      aria-hidden="true"
+                                      className={`size-2.5 rounded-full ${
+                                        type === "activity" ? "bg-type-activity" : "bg-type-meal"
+                                      }`}
+                                    />
+                                    {type === "activity"
+                                      ? t("spreadsheet.activity")
+                                      : t("spreadsheet.meal")}
+                                  </span>
+                                  <span className="flex shrink-0 gap-1">
+                                    <button
+                                      aria-label={t("spreadsheet.moveUp")}
+                                      className="rounded border border-border px-1.5 py-0.5 text-xs text-muted hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
+                                      disabled={isReordering || itemIndex === 0}
+                                      onClick={() =>
+                                        void moveItineraryItem(day.date, itemIndex, -1)
+                                      }
+                                      type="button"
+                                    >
+                                      ↑
+                                    </button>
+                                    <button
+                                      aria-label={t("spreadsheet.moveDown")}
+                                      className="rounded border border-border px-1.5 py-0.5 text-xs text-muted hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
+                                      disabled={
+                                        isReordering || itemIndex === rows.length - 1
+                                      }
+                                      onClick={() =>
+                                        void moveItineraryItem(day.date, itemIndex, 1)
+                                      }
+                                      type="button"
+                                    >
+                                      ↓
+                                    </button>
+                                  </span>
                                 </span>
                               </SpreadsheetCell>
                               <SpreadsheetCell>
