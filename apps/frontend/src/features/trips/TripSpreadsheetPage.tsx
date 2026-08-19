@@ -11,8 +11,10 @@ import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
 import {
   createActivity,
+  createHousingStay,
   createMeal,
   deleteActivity,
+  deleteHousingStay,
   deleteMeal,
   updateActivity,
   getTrip,
@@ -32,6 +34,7 @@ import { GoogleMapsLinkButton } from "../../components/GoogleMapsLinkButton"
 import { MapLocateButton } from "../../components/MapLocateButton"
 import { SettingsIcon } from "../../components/SettingsIcon"
 import { TimePicker } from "../../components/TimePicker"
+import { useToast } from "../../components/ToastContext"
 import {
   TripItemPreference,
   TripItemPreferenceDistribution,
@@ -42,16 +45,13 @@ import { getDayItemTitle, sortDayItems } from "../../lib/activity-format"
 import { getDefaultCurrency } from "../../lib/currency"
 import { formatDate } from "../../lib/date-format"
 import { getErrorMessage } from "../../lib/errors"
+import { shiftDate } from "../../lib/trip-dates"
 import {
   isAllowedGoogleMapsUrl,
   type TripItemPreferenceValue,
   type TripItemType,
 } from "@turprep/models"
-import {
-  replaceActivityInTrip,
-  replaceHousingStayInTrip,
-  replaceMealInTrip,
-} from "./trip-state"
+import { replaceActivityInTrip, replaceHousingStayInTrip, replaceMealInTrip } from "./trip-state"
 import { TripSettings } from "./TripSettings"
 
 type TripSpreadsheetPageProps = {
@@ -69,6 +69,7 @@ type TripSpreadsheetPageProps = {
 type HousingDraft = {
   checkIn: string
   checkOut: string
+  googleMapsUrl: string
   name: string
   notes: string
   priceAmount: string
@@ -80,6 +81,7 @@ function getHousingDraft(stay: HousingStay): HousingDraft {
   return {
     checkIn: stay.checkIn ?? "",
     checkOut: stay.checkOut ?? "",
+    googleMapsUrl: stay.googleMapsUrl ?? "",
     name: stay.name,
     notes: stay.notes ?? "",
     priceAmount: stay.priceAmount === null ? "" : String(stay.priceAmount),
@@ -126,10 +128,14 @@ type CreateItemDraft = ItemDraft & {
 
 type EditableField = "endTime" | "notes" | "startTime" | "title"
 type HousingEditableField = "checkIn" | "checkOut" | "name" | "notes" | "price" | "website"
-type PendingDeletion = {
-  item: Activity | Meal
-  type: ItineraryRow["type"]
-}
+type PendingDeletion =
+  | {
+      housing: HousingStay
+    }
+  | {
+      item: Activity | Meal
+      type: ItineraryRow["type"]
+    }
 const housingEditableFields: HousingEditableField[] = [
   "name",
   "checkIn",
@@ -210,8 +216,10 @@ function getItineraryRowKey(row: ItineraryRow) {
 }
 
 function isDragBlockedTarget(target: EventTarget | null) {
-  return target instanceof HTMLElement &&
+  return (
+    target instanceof HTMLElement &&
     Boolean(target.closest("button, input, select, textarea, [contenteditable='true']"))
+  )
 }
 
 function getItineraryRows(trip: TripDetail, date: string): ItineraryRow[] {
@@ -319,9 +327,7 @@ function SpreadsheetItemActions({
   const [isEditingMaps, setIsEditingMaps] = useState(false)
   const [mapsDraft, setMapsDraft] = useState("")
   const [mapsError, setMapsError] = useState<string | null>(null)
-  const hasValidMapsUrl = Boolean(
-    item.googleMapsUrl && isAllowedGoogleMapsUrl(item.googleMapsUrl),
-  )
+  const hasValidMapsUrl = Boolean(item.googleMapsUrl && isAllowedGoogleMapsUrl(item.googleMapsUrl))
 
   function startEditingMaps() {
     setMapsDraft(item.googleMapsUrl ?? "")
@@ -333,10 +339,7 @@ function SpreadsheetItemActions({
     event.preventDefault()
     const normalizedGoogleMapsUrl = mapsDraft.trim()
 
-    if (
-      normalizedGoogleMapsUrl.length > 0 &&
-      !isAllowedGoogleMapsUrl(normalizedGoogleMapsUrl)
-    ) {
+    if (normalizedGoogleMapsUrl.length > 0 && !isAllowedGoogleMapsUrl(normalizedGoogleMapsUrl)) {
       setMapsError(t("errors.googleMapsInvalid"))
       return
     }
@@ -357,113 +360,113 @@ function SpreadsheetItemActions({
         <MapLocateButton label={t("tripMap.locate")} onClick={onOpenMap} />
       )}
       {hasValidMapsUrl ? (
-          <a
-            aria-label={t("tripDetails.openGoogleMaps")}
+        <a
+          aria-label={t("tripDetails.openGoogleMaps")}
           className="grid size-9 place-items-center rounded-xl border border-border bg-surface p-2 text-muted hover:bg-surface-muted hover:text-brand"
-            href={item.googleMapsUrl ?? undefined}
-            rel="noreferrer"
-            target="_blank"
-            title={t("tripDetails.openGoogleMaps")}
-          >
-            <GoogleIcon />
-          </a>
-        ) : (
-          <button
-            aria-label={t("tripDetails.openGoogleMaps")}
-            className="grid size-9 cursor-not-allowed place-items-center rounded-xl border border-border bg-surface p-2 text-disabled opacity-50 grayscale"
-            disabled
-            title={t("tripDetails.openGoogleMaps")}
-            type="button"
-          >
-            <GoogleIcon />
-          </button>
+          href={item.googleMapsUrl ?? undefined}
+          rel="noreferrer"
+          target="_blank"
+          title={t("tripDetails.openGoogleMaps")}
+        >
+          <GoogleIcon />
+        </a>
+      ) : (
+        <button
+          aria-label={t("tripDetails.openGoogleMaps")}
+          className="grid size-9 cursor-not-allowed place-items-center rounded-xl border border-border bg-surface p-2 text-disabled opacity-50 grayscale"
+          disabled
+          title={t("tripDetails.openGoogleMaps")}
+          type="button"
+        >
+          <GoogleIcon />
+        </button>
+      )}
+      <div className="relative">
+        <button
+          aria-expanded={isMenuOpen}
+          aria-label={t("common.menu")}
+          className="flex size-9 items-center justify-center rounded-xl border border-border bg-surface p-2 text-muted hover:bg-surface-muted hover:text-brand disabled:opacity-50"
+          disabled={isBusy}
+          onClick={() => setIsMenuOpen((current) => !current)}
+          title={t("common.menu")}
+          type="button"
+        >
+          <svg aria-hidden="true" className="size-5" fill="currentColor" viewBox="0 0 24 24">
+            <circle cx="5" cy="12" r="1.7" />
+            <circle cx="12" cy="12" r="1.7" />
+            <circle cx="19" cy="12" r="1.7" />
+          </svg>
+        </button>
+        {isMenuOpen && (
+          <div className="absolute right-0 top-full z-20 mt-1 grid min-w-52 gap-1 rounded-xl border border-border bg-surface p-1 shadow-popover">
+            {!isEditingMaps ? (
+              <>
+                <button
+                  className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-on-surface hover:bg-surface-muted"
+                  onClick={() => {
+                    setIsMenuOpen(false)
+                    onMoveToBackup()
+                  }}
+                  type="button"
+                >
+                  {t("backup.moveToBackup")}
+                </button>
+                <button
+                  className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-on-surface hover:bg-surface-muted"
+                  onClick={startEditingMaps}
+                  type="button"
+                >
+                  {t("spreadsheet.changeGoogleMaps")}
+                </button>
+                <button
+                  className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-error hover:bg-danger-surface"
+                  onClick={() => {
+                    setIsMenuOpen(false)
+                    onDelete()
+                  }}
+                  type="button"
+                >
+                  {t("common.delete")}
+                </button>
+              </>
+            ) : (
+              <form className="grid gap-2 p-2" onSubmit={(event) => void saveMaps(event)}>
+                <label className="grid gap-1 text-xs font-semibold text-muted">
+                  {t("spreadsheet.changeGoogleMaps")}
+                  <input
+                    autoFocus
+                    className="w-64 rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-on-surface outline-none focus:border-brand"
+                    onChange={(event) => {
+                      setMapsDraft(event.target.value)
+                      setMapsError(null)
+                    }}
+                    placeholder={t("tripDetails.googleMapsPlaceholder")}
+                    type="url"
+                    value={mapsDraft}
+                  />
+                </label>
+                {mapsError && <p className="text-xs text-error">{mapsError}</p>}
+                <div className="flex justify-end gap-2">
+                  <button
+                    className="rounded-lg px-2 py-1 text-xs font-semibold text-muted hover:bg-surface-muted"
+                    onClick={() => setIsEditingMaps(false)}
+                    type="button"
+                  >
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    className="rounded-lg bg-brand-surface px-2 py-1 text-xs font-semibold text-on-brand disabled:opacity-50"
+                    disabled={isBusy}
+                    type="submit"
+                  >
+                    {isBusy ? t("common.saving") : t("common.save")}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
         )}
-        <div className="relative">
-          <button
-            aria-expanded={isMenuOpen}
-            aria-label={t("common.menu")}
-            className="flex size-9 items-center justify-center rounded-xl border border-border bg-surface p-2 text-muted hover:bg-surface-muted hover:text-brand disabled:opacity-50"
-            disabled={isBusy}
-            onClick={() => setIsMenuOpen((current) => !current)}
-            title={t("common.menu")}
-            type="button"
-          >
-            <svg aria-hidden="true" className="size-5" fill="currentColor" viewBox="0 0 24 24">
-              <circle cx="5" cy="12" r="1.7" />
-              <circle cx="12" cy="12" r="1.7" />
-              <circle cx="19" cy="12" r="1.7" />
-            </svg>
-          </button>
-          {isMenuOpen && (
-            <div className="absolute right-0 top-full z-20 mt-1 grid min-w-52 gap-1 rounded-xl border border-border bg-surface p-1 shadow-popover">
-              {!isEditingMaps ? (
-                <>
-                  <button
-                    className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-on-surface hover:bg-surface-muted"
-                    onClick={() => {
-                      setIsMenuOpen(false)
-                      onMoveToBackup()
-                    }}
-                    type="button"
-                  >
-                    {t("backup.moveToBackup")}
-                  </button>
-                  <button
-                    className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-on-surface hover:bg-surface-muted"
-                    onClick={startEditingMaps}
-                    type="button"
-                  >
-                    {t("spreadsheet.changeGoogleMaps")}
-                  </button>
-                  <button
-                    className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-error hover:bg-danger-surface"
-                    onClick={() => {
-                      setIsMenuOpen(false)
-                      onDelete()
-                    }}
-                    type="button"
-                  >
-                    {t("common.delete")}
-                  </button>
-                </>
-              ) : (
-                <form className="grid gap-2 p-2" onSubmit={(event) => void saveMaps(event)}>
-                  <label className="grid gap-1 text-xs font-semibold text-muted">
-                    {t("spreadsheet.changeGoogleMaps")}
-                    <input
-                      autoFocus
-                      className="w-64 rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-on-surface outline-none focus:border-brand"
-                      onChange={(event) => {
-                        setMapsDraft(event.target.value)
-                        setMapsError(null)
-                      }}
-                      placeholder={t("tripDetails.googleMapsPlaceholder")}
-                      type="url"
-                      value={mapsDraft}
-                    />
-                  </label>
-                  {mapsError && <p className="text-xs text-error">{mapsError}</p>}
-                  <div className="flex justify-end gap-2">
-                    <button
-                      className="rounded-lg px-2 py-1 text-xs font-semibold text-muted hover:bg-surface-muted"
-                      onClick={() => setIsEditingMaps(false)}
-                      type="button"
-                    >
-                      {t("common.cancel")}
-                    </button>
-                    <button
-                      className="rounded-lg bg-brand-surface px-2 py-1 text-xs font-semibold text-on-brand disabled:opacity-50"
-                      disabled={isBusy}
-                      type="submit"
-                    >
-                      {isBusy ? t("common.saving") : t("common.save")}
-                    </button>
-                  </div>
-                </form>
-              )}
-            </div>
-          )}
-        </div>
+      </div>
     </div>
   )
 }
@@ -480,11 +483,14 @@ export function TripSpreadsheetPage({
   showDetails,
 }: TripSpreadsheetPageProps) {
   const { i18n, t } = useTranslation()
+  const { addToast } = useToast()
   const locale = getDateLocale(i18n.language)
   const [editingFieldKey, setEditingFieldKey] = useState<string | null>(null)
   const [draft, setDraft] = useState<ItemDraft | null>(null)
   const [housingEditingKey, setHousingEditingKey] = useState<string | null>(null)
   const [housingDraft, setHousingDraft] = useState<HousingDraft | null>(null)
+  const [creatingHousingDayDate, setCreatingHousingDayDate] = useState<string | null>(null)
+  const [housingCreateDraft, setHousingCreateDraft] = useState<HousingDraft | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [creatingDayDate, setCreatingDayDate] = useState<string | null>(null)
   const [creatingItemType, setCreatingItemType] = useState<ItineraryRow["type"]>("activity")
@@ -524,10 +530,13 @@ export function TripSpreadsheetPage({
     ),
   )
   const rowCounts = itineraryRows.map(
-    ({ day, rows }) =>
-      1 + Math.max(rows.length, 1) + (creatingDayDate === day.date ? 1 : 0),
+    ({ day, rows }) => 1 + Math.max(rows.length, 1) + (creatingDayDate === day.date ? 1 : 0),
   )
   const getHousingRowSpan = (startIndex: number) => {
+    if (!housingByDay[startIndex]) {
+      return 1
+    }
+
     const housingId = housingByDay[startIndex]?.id ?? null
     let endIndex = startIndex
 
@@ -545,10 +554,26 @@ export function TripSpreadsheetPage({
     }
   }, [trip])
 
+  useEffect(() => {
+    if (!reorderError) {
+      return
+    }
+
+    addToast(reorderError)
+    setReorderError(null)
+  }, [addToast, reorderError])
+
+  useEffect(() => {
+    if (!saveError || editingFieldKey || housingEditingKey || housingCreateDraft) {
+      return
+    }
+
+    addToast(saveError)
+    setSaveError(null)
+  }, [addToast, editingFieldKey, housingCreateDraft, housingEditingKey, saveError])
+
   const dropLineBounds = tableRef.current?.getBoundingClientRect()
-  const draggedItemKey = draggedItem
-    ? `${draggedItem.itemType}:${draggedItem.itemId}`
-    : null
+  const draggedItemKey = draggedItem ? `${draggedItem.itemType}:${draggedItem.itemId}` : null
   const draggedItemSourceIndex = draggedItem
     ? getItineraryRows(latestTripRef.current, draggedItem.dayDate).findIndex(
         (row) => getItineraryRowKey(row) === draggedItemKey,
@@ -603,8 +628,7 @@ export function TripSpreadsheetPage({
 
     return landingZones.reduce<SpreadsheetDropTarget | null>((nearest, zone) => {
       const candidate = { dayDate, ...zone }
-      return !nearest ||
-        Math.abs(candidate.lineY - clientY) < Math.abs(nearest.lineY - clientY)
+      return !nearest || Math.abs(candidate.lineY - clientY) < Math.abs(nearest.lineY - clientY)
         ? candidate
         : nearest
     }, null)
@@ -672,7 +696,9 @@ export function TripSpreadsheetPage({
           }}
           onNotesChange={(notes) => setCreateDraft((current) => ({ ...current, notes }))}
           onSelectItemType={setCreatingItemType}
-          onStartTimeChange={(startTime) => setCreateDraft((current) => ({ ...current, startTime }))}
+          onStartTimeChange={(startTime) =>
+            setCreateDraft((current) => ({ ...current, startTime }))
+          }
           onSubmit={(event) => void saveNewItem(event, dayDate)}
           onTitleChange={(title) => setCreateDraft((current) => ({ ...current, title }))}
           startTime={createDraft.startTime}
@@ -895,6 +921,11 @@ export function TripSpreadsheetPage({
       return
     }
 
+    if ("housing" in pendingDeletion) {
+      await confirmHousingDeletion(pendingDeletion.housing)
+      return
+    }
+
     const { item, type } = pendingDeletion
     setIsSaving(true)
     setSaveError(null)
@@ -1013,10 +1044,7 @@ export function TripSpreadsheetPage({
     setReorderError(null)
   }
 
-  function handleSpreadsheetDragOver(
-    event: DragEvent<HTMLTableRowElement>,
-    dayDate: string,
-  ) {
+  function handleSpreadsheetDragOver(event: DragEvent<HTMLTableRowElement>, dayDate: string) {
     if (!draggedItem) {
       return
     }
@@ -1090,9 +1118,7 @@ export function TripSpreadsheetPage({
       })
   }
 
-  async function handleSpreadsheetDrop(
-    event: DragEvent<HTMLTableRowElement>,
-  ) {
+  async function handleSpreadsheetDrop(event: DragEvent<HTMLTableRowElement>) {
     event.preventDefault()
     event.stopPropagation()
 
@@ -1117,9 +1143,7 @@ export function TripSpreadsheetPage({
         ),
       )?.date
     const sourceRows = sourceDate ? getItineraryRows(currentTrip, sourceDate) : []
-    const sourceIndex = sourceRows.findIndex(
-      (row) => getItineraryRowKey(row) === draggedItemKey,
-    )
+    const sourceIndex = sourceRows.findIndex((row) => getItineraryRowKey(row) === draggedItemKey)
     const targetRows = getItineraryRows(currentTrip, targetDate)
 
     if (!sourceDate || sourceIndex < 0) {
@@ -1183,7 +1207,10 @@ export function TripSpreadsheetPage({
     if (isSameDay) {
       rowsByDate.set(sourceDate, nextTargetRows)
     } else {
-      rowsByDate.set(sourceDate, sourceRows.filter((row) => getItineraryRowKey(row) !== draggedItemKey))
+      rowsByDate.set(
+        sourceDate,
+        sourceRows.filter((row) => getItineraryRowKey(row) !== draggedItemKey),
+      )
       rowsByDate.set(targetDate, nextTargetRows)
     }
 
@@ -1240,6 +1267,117 @@ export function TripSpreadsheetPage({
     setHousingEditingKey(null)
     setHousingDraft(null)
     setSaveError(null)
+  }
+
+  function startCreatingHousing(dayDate: string) {
+    if (isSaving) {
+      return
+    }
+
+    setCreatingHousingDayDate(dayDate)
+    setHousingCreateDraft({
+      checkIn: dayDate,
+      checkOut: shiftDate(dayDate, 1),
+      googleMapsUrl: "",
+      name: "",
+      notes: "",
+      priceAmount: "",
+      priceCurrency: "",
+      website: "",
+    })
+    setSaveError(null)
+  }
+
+  function cancelCreatingHousing() {
+    if (isSaving) {
+      return
+    }
+
+    setCreatingHousingDayDate(null)
+    setHousingCreateDraft(null)
+    setSaveError(null)
+  }
+
+  async function saveCreatingHousing() {
+    if (!housingCreateDraft || !creatingHousingDayDate) {
+      return
+    }
+
+    const name = housingCreateDraft.name.trim()
+    const normalizedGoogleMapsUrl = housingCreateDraft.googleMapsUrl.trim()
+    const normalizedAmount = housingCreateDraft.priceAmount.trim()
+
+    if (!name) {
+      setSaveError(t("spreadsheet.housingNameRequired"))
+      return
+    }
+
+    if (normalizedGoogleMapsUrl && !isAllowedGoogleMapsUrl(normalizedGoogleMapsUrl)) {
+      setSaveError(t("errors.googleMapsInvalid"))
+      return
+    }
+
+    if (
+      !housingCreateDraft.checkIn ||
+      !housingCreateDraft.checkOut ||
+      housingCreateDraft.checkOut <= housingCreateDraft.checkIn
+    ) {
+      setSaveError(t("spreadsheet.housingDateRangeInvalid"))
+      return
+    }
+
+    if (normalizedAmount) {
+      const parsedAmount = Number(normalizedAmount)
+      const decimalPlaces = normalizedAmount.split(".")[1]?.length ?? 0
+
+      if (
+        !Number.isFinite(parsedAmount) ||
+        parsedAmount < 0 ||
+        decimalPlaces > 2 ||
+        !/^\d+(?:\.\d{1,2})?$/.test(normalizedAmount)
+      ) {
+        setSaveError(t("itemDetails.priceInvalid"))
+        return
+      }
+
+      if (!housingCreateDraft.priceCurrency) {
+        setSaveError(t("itemDetails.priceCurrencyRequired"))
+        return
+      }
+    }
+
+    if (!normalizedAmount && housingCreateDraft.priceCurrency) {
+      setSaveError(t("itemDetails.priceAmountRequired"))
+      return
+    }
+
+    setIsSaving(true)
+    setSaveError(null)
+
+    try {
+      const createdStay = await createHousingStay(accessToken, trip.id, {
+        checkIn: housingCreateDraft.checkIn,
+        checkOut: housingCreateDraft.checkOut,
+        googleMapsUrl: normalizedGoogleMapsUrl || null,
+        isBackup: false,
+        name,
+        notes: housingCreateDraft.notes.trim() || null,
+        placeAddress: null,
+        placeName: null,
+        latitude: null,
+        longitude: null,
+        priceAmount: normalizedAmount ? Number(normalizedAmount) : null,
+        priceCurrency: normalizedAmount ? housingCreateDraft.priceCurrency : null,
+        website: housingCreateDraft.website.trim() || null,
+      })
+      onTripUpdated({ ...trip, housingStays: [...trip.housingStays, createdStay] })
+      setCreatingHousingDayDate(null)
+      setHousingCreateDraft(null)
+    } catch (reason: unknown) {
+      setSaveError(getErrorMessage(reason))
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   async function saveHousingEditingField(stay: HousingStay, field: HousingEditableField) {
@@ -1322,6 +1460,161 @@ export function TripSpreadsheetPage({
     } finally {
       setIsSaving(false)
     }
+  }
+
+  async function confirmHousingDeletion(stay: HousingStay) {
+    setIsSaving(true)
+    setSaveError(null)
+
+    try {
+      await deleteHousingStay(accessToken, trip.id, stay.id)
+      onTripUpdated({
+        ...trip,
+        housingStays: trip.housingStays.filter((current) => current.id !== stay.id),
+      })
+      setPendingDeletion(null)
+    } catch (reason: unknown) {
+      setSaveError(getErrorMessage(reason))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  function renderHousingCreateForm() {
+    if (!housingCreateDraft) {
+      return null
+    }
+
+    return (
+      <form
+        className="grid gap-2"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void saveCreatingHousing()
+        }}
+      >
+        <input
+          aria-label={t("tripDetails.housingName")}
+          autoFocus
+          className="w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
+          onChange={(event) =>
+            setHousingCreateDraft((current) =>
+              current ? { ...current, name: event.target.value } : current,
+            )
+          }
+          placeholder={t("tripDetails.housingName")}
+          value={housingCreateDraft.name}
+        />
+        <input
+          aria-label={t("tripDetails.googleMapsUrl")}
+          className="w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
+          onChange={(event) =>
+            setHousingCreateDraft((current) =>
+              current ? { ...current, googleMapsUrl: event.target.value } : current,
+            )
+          }
+          placeholder={t("tripDetails.googleMapsPlaceholder")}
+          type="url"
+          value={housingCreateDraft.googleMapsUrl}
+        />
+        <DatePicker
+          label={t("tripDetails.checkIn")}
+          onChange={(value) =>
+            setHousingCreateDraft((current) => (current ? { ...current, checkIn: value } : current))
+          }
+          value={housingCreateDraft.checkIn}
+        />
+        <DatePicker
+          label={t("tripDetails.checkOut")}
+          onChange={(value) =>
+            setHousingCreateDraft((current) =>
+              current ? { ...current, checkOut: value } : current,
+            )
+          }
+          value={housingCreateDraft.checkOut}
+        />
+        <textarea
+          aria-label={t("tripDetails.notes")}
+          className="min-h-16 resize-y rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
+          onChange={(event) =>
+            setHousingCreateDraft((current) =>
+              current ? { ...current, notes: event.target.value } : current,
+            )
+          }
+          placeholder={t("tripDetails.notesPlaceholder")}
+          value={housingCreateDraft.notes}
+        />
+        {showPrice && (
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_5rem]">
+            <input
+              aria-label={t("itemDetails.price")}
+              className="w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
+              inputMode="decimal"
+              min="0"
+              onChange={(event) =>
+                setHousingCreateDraft((current) =>
+                  current ? { ...current, priceAmount: event.target.value } : current,
+                )
+              }
+              placeholder={t("itemDetails.price")}
+              step="0.01"
+              type="number"
+              value={housingCreateDraft.priceAmount}
+            />
+            <select
+              aria-label={t("itemDetails.currency")}
+              className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
+              onChange={(event) =>
+                setHousingCreateDraft((current) =>
+                  current ? { ...current, priceCurrency: event.target.value } : current,
+                )
+              }
+              value={housingCreateDraft.priceCurrency}
+            >
+              <option value="">{t("itemDetails.noCurrency")}</option>
+              {currencies.map((currency) => (
+                <option key={currency} value={currency}>
+                  {currency}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        {showWebsite && (
+          <input
+            aria-label={t("itemDetails.website")}
+            className="w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
+            maxLength={2000}
+            onChange={(event) =>
+              setHousingCreateDraft((current) =>
+                current ? { ...current, website: event.target.value } : current,
+              )
+            }
+            placeholder={t("itemDetails.websitePlaceholder")}
+            type="text"
+            value={housingCreateDraft.website}
+          />
+        )}
+        {saveError && <p className="text-xs text-error">{saveError}</p>}
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="rounded-lg bg-brand-surface px-2 py-1 text-xs font-semibold text-on-brand disabled:opacity-50"
+            disabled={isSaving}
+            type="submit"
+          >
+            {isSaving ? t("common.saving") : t("common.save")}
+          </button>
+          <button
+            className="rounded-lg border border-border px-2 py-1 text-xs font-semibold text-on-surface disabled:opacity-50"
+            disabled={isSaving}
+            onClick={cancelCreatingHousing}
+            type="button"
+          >
+            {t("common.cancel")}
+          </button>
+        </div>
+      </form>
+    )
   }
 
   function renderHousingActions(stay: HousingStay, field: HousingEditableField) {
@@ -1432,11 +1725,6 @@ export function TripSpreadsheetPage({
             trip={trip}
           />
         )}
-        {reorderError && <p className="mt-3 text-sm text-error">{reorderError}</p>}
-        {saveError && !editingFieldKey && !housingEditingKey && (
-          <p className="mt-3 text-sm text-error">{saveError}</p>
-        )}
-
         <div className="relative mt-5 w-full overflow-x-auto">
           <div className="w-full min-w-0 rounded-2xl border border-border-card bg-surface">
             <table
@@ -1444,7 +1732,7 @@ export function TripSpreadsheetPage({
               ref={tableRef}
             >
               <colgroup>
-                <col className="w-52" />
+                <col className="w-64" />
                 <col className="w-30" />
                 <col className="w-56" />
                 <col className="w-16" />
@@ -1482,7 +1770,8 @@ export function TripSpreadsheetPage({
                   const housing = housingByDay[dayIndex]
                   const housingId = housing?.id ?? null
                   const previousHousingId = housingByDay[dayIndex - 1]?.id ?? null
-                  const startsHousingBlock = dayIndex === 0 || housingId !== previousHousingId
+                  const startsHousingBlock =
+                    !housing || dayIndex === 0 || housingId !== previousHousingId
                   const activeHousingField = housing
                     ? (housingEditableFields.find(
                         (field) => housingEditingKey === `${housing.id}:${field}`,
@@ -1511,7 +1800,9 @@ export function TripSpreadsheetPage({
                                       className="w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
                                       onChange={(event) =>
                                         setHousingDraft((current) =>
-                                          current ? { ...current, name: event.target.value } : current,
+                                          current
+                                            ? { ...current, name: event.target.value }
+                                            : current,
                                         )
                                       }
                                       value={housingDraft.name}
@@ -1583,7 +1874,9 @@ export function TripSpreadsheetPage({
                                       className="min-h-20 resize-y rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
                                       onChange={(event) =>
                                         setHousingDraft((current) =>
-                                          current ? { ...current, notes: event.target.value } : current,
+                                          current
+                                            ? { ...current, notes: event.target.value }
+                                            : current,
                                         )
                                       }
                                       value={housingDraft.notes}
@@ -1620,7 +1913,10 @@ export function TripSpreadsheetPage({
                                               onChange={(event) =>
                                                 setHousingDraft((current) =>
                                                   current
-                                                    ? { ...current, priceAmount: event.target.value }
+                                                    ? {
+                                                        ...current,
+                                                        priceAmount: event.target.value,
+                                                      }
                                                     : current,
                                                 )
                                               }
@@ -1645,9 +1941,13 @@ export function TripSpreadsheetPage({
                                               }
                                               value={housingDraft.priceCurrency}
                                             >
-                                              <option value="">{t("itemDetails.noCurrency")}</option>
+                                              <option value="">
+                                                {t("itemDetails.noCurrency")}
+                                              </option>
                                               {housingDraft.priceCurrency &&
-                                                !currencies.includes(housingDraft.priceCurrency) && (
+                                                !currencies.includes(
+                                                  housingDraft.priceCurrency,
+                                                ) && (
                                                   <option value={housingDraft.priceCurrency}>
                                                     {housingDraft.priceCurrency}
                                                   </option>
@@ -1720,11 +2020,30 @@ export function TripSpreadsheetPage({
                                     )}
                                   </div>
                                 )}
+                                <button
+                                  className="rounded-lg border border-border px-2 py-1 text-xs font-semibold text-error hover:bg-danger-surface"
+                                  onClick={() => setPendingDeletion({ housing })}
+                                  type="button"
+                                >
+                                  {t("common.delete")}
+                                </button>
                               </div>
+                            ) : creatingHousingDayDate === day.date ? (
+                              renderHousingCreateForm()
                             ) : (
-                              <span className="text-sm text-muted">
-                                {t("spreadsheet.noHousing")}
-                              </span>
+                              <div className="grid gap-2">
+                                <span className="text-sm text-muted">
+                                  {t("spreadsheet.noHousing")}
+                                </span>
+                                <button
+                                  className="rounded-lg border border-border px-2 py-1 text-xs font-semibold text-muted hover:border-brand hover:text-brand disabled:opacity-50"
+                                  disabled={isSaving}
+                                  onClick={() => startCreatingHousing(day.date)}
+                                  type="button"
+                                >
+                                  {t("tripDetails.add")}
+                                </button>
+                              </div>
                             )}
                           </td>
                         )}
@@ -1760,7 +2079,10 @@ export function TripSpreadsheetPage({
                       </tr>
                       {creatingDayDate === day.date && (
                         <tr>
-                          <td className="border-b border-border-divider p-3" colSpan={itineraryColumnCount}>
+                          <td
+                            className="border-b border-border-divider p-3"
+                            colSpan={itineraryColumnCount}
+                          >
                             {renderCreateItemForm(day.date)}
                           </td>
                         </tr>
@@ -1771,6 +2093,12 @@ export function TripSpreadsheetPage({
                           onDragOver={(event) => handleSpreadsheetDayDragOver(event, day.date)}
                           onDrop={(event) => void handleSpreadsheetDayDrop(event)}
                         >
+                          {!housing && (
+                            <td
+                              aria-hidden="true"
+                              className="border-b border-r border-border-divider bg-surface-soft p-3"
+                            />
+                          )}
                           <td
                             className="border-b border-border-divider px-3 py-2 text-sm text-muted"
                             colSpan={itineraryColumnCount}
@@ -1815,9 +2143,7 @@ export function TripSpreadsheetPage({
                                 data-drop-day={day.date}
                                 data-drop-item-index={itemIndex}
                                 draggable={!activeField && !housingEditingKey}
-                                onDragOver={(event) =>
-                                  handleSpreadsheetDragOver(event, day.date)
-                                }
+                                onDragOver={(event) => handleSpreadsheetDragOver(event, day.date)}
                                 onDragEnd={handleSpreadsheetDragEnd}
                                 onDragStart={(event) =>
                                   handleSpreadsheetDragStart(event, day.date, {
@@ -1827,7 +2153,10 @@ export function TripSpreadsheetPage({
                                 }
                                 onDrop={(event) => void handleSpreadsheetDrop(event)}
                               >
-                                <td className="relative border-b-0 p-0" colSpan={itineraryColumnCount}>
+                                <td
+                                  className="relative border-b-0 p-0"
+                                  colSpan={itineraryColumnCount}
+                                >
                                   <table className="min-w-full table-fixed border-collapse text-left">
                                     <colgroup>
                                       <col className="w-30" />
@@ -1845,196 +2174,213 @@ export function TripSpreadsheetPage({
                                     </colgroup>
                                     <tbody>
                                       <tr className="group-hover:bg-surface-soft">
-                              <SpreadsheetCell className="border-b-0 text-base font-semibold">
-                                {formatDate(item.tripDate ?? day.date)}
-                              </SpreadsheetCell>
-                              <SpreadsheetCell className="border-b-0 text-base font-semibold">
-                                {activeField === "title" && draft ? (
-                                  <>
-                                    <input
-                                      aria-label={t("spreadsheet.title")}
-                                      autoFocus
-                                      className="w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
-                                      onChange={(event) =>
-                                        setDraft((current) =>
-                                          current
-                                            ? { ...current, title: event.target.value }
-                                            : current,
-                                        )
-                                      }
-                                      value={draft.title}
+                                        <SpreadsheetCell className="border-b-0 text-base font-semibold">
+                                          {formatDate(item.tripDate ?? day.date)}
+                                        </SpreadsheetCell>
+                                        <SpreadsheetCell className="border-b-0 text-base font-semibold">
+                                          {activeField === "title" && draft ? (
+                                            <>
+                                              <input
+                                                aria-label={t("spreadsheet.title")}
+                                                autoFocus
+                                                className="w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
+                                                onChange={(event) =>
+                                                  setDraft((current) =>
+                                                    current
+                                                      ? { ...current, title: event.target.value }
+                                                      : current,
+                                                  )
+                                                }
+                                                value={draft.title}
+                                              />
+                                              {renderActions("title")}
+                                            </>
+                                          ) : (
+                                            <button
+                                              className={`w-full cursor-text text-left underline decoration-2 underline-offset-4 transition hover:text-brand ${
+                                                type === "activity"
+                                                  ? "decoration-type-activity"
+                                                  : "decoration-type-meal"
+                                              }`}
+                                              onClick={() => startEditing(type, item, "title")}
+                                              type="button"
+                                            >
+                                              {getDayItemTitle(item, t("tripDetails.untitledItem"))}
+                                            </button>
+                                          )}
+                                        </SpreadsheetCell>
+                                        <SpreadsheetCell className="border-b-0">
+                                          {activeField === "startTime" && draft ? (
+                                            <>
+                                              <label className="flex items-center gap-1 text-xs text-muted">
+                                                <input
+                                                  checked={draft.allDay}
+                                                  onChange={(event) =>
+                                                    setDraft((current) =>
+                                                      current
+                                                        ? {
+                                                            ...current,
+                                                            allDay: event.target.checked,
+                                                          }
+                                                        : current,
+                                                    )
+                                                  }
+                                                  type="checkbox"
+                                                />
+                                                {t("spreadsheet.allDay")}
+                                              </label>
+                                              {!draft.allDay && (
+                                                <div className="mt-2">
+                                                  <TimePicker
+                                                    label={t("spreadsheet.start")}
+                                                    onChange={(value) =>
+                                                      setDraft((current) =>
+                                                        current
+                                                          ? { ...current, startTime: value }
+                                                          : current,
+                                                      )
+                                                    }
+                                                    value={draft.startTime}
+                                                  />
+                                                </div>
+                                              )}
+                                              {renderActions("startTime")}
+                                            </>
+                                          ) : (
+                                            <button
+                                              className="w-full cursor-text text-left transition hover:text-brand"
+                                              onClick={() => startEditing(type, item, "startTime")}
+                                              type="button"
+                                            >
+                                              {item.allDay
+                                                ? t("spreadsheet.allDay")
+                                                : item.startTime}
+                                            </button>
+                                          )}
+                                        </SpreadsheetCell>
+                                        <SpreadsheetCell className="border-b-0">
+                                          {activeField === "endTime" && draft ? (
+                                            <>
+                                              {!draft.allDay && (
+                                                <TimePicker
+                                                  label={t("spreadsheet.end")}
+                                                  onChange={(value) =>
+                                                    setDraft((current) =>
+                                                      current
+                                                        ? { ...current, endTime: value }
+                                                        : current,
+                                                    )
+                                                  }
+                                                  value={draft.endTime}
+                                                />
+                                              )}
+                                              {renderActions("endTime")}
+                                            </>
+                                          ) : (
+                                            <button
+                                              className="w-full cursor-text text-left transition hover:text-brand"
+                                              onClick={() => startEditing(type, item, "endTime")}
+                                              type="button"
+                                            >
+                                              {item.allDay ? t("spreadsheet.allDay") : item.endTime}
+                                            </button>
+                                          )}
+                                        </SpreadsheetCell>
+                                        {showPrice && (
+                                          <>
+                                            <SpreadsheetCell className="border-b-0">
+                                              {item.priceAmount}
+                                            </SpreadsheetCell>
+                                            <SpreadsheetCell className="border-b-0">
+                                              {item.priceCurrency}
+                                            </SpreadsheetCell>
+                                          </>
+                                        )}
+                                        {showWebsite && (
+                                          <SpreadsheetCell className="border-b-0">
+                                            {item.website}
+                                          </SpreadsheetCell>
+                                        )}
+                                        <SpreadsheetCell className="border-b-0">
+                                          <div className="flex items-start justify-end gap-2 pr-2">
+                                            <TripItemPreference
+                                              compact
+                                              disabled={
+                                                savingPreferenceKey === `${type}:${item.id}`
+                                              }
+                                              itemId={item.id}
+                                              itemType={type}
+                                              onChange={(value) =>
+                                                void handlePreferenceChange(type, item.id, value)
+                                              }
+                                              preferences={trip.preferences}
+                                              userId={userId}
+                                            />
+                                            <SpreadsheetItemActions
+                                              isBusy={isSaving}
+                                              item={item}
+                                              onChangeGoogleMapsUrl={(googleMapsUrl) =>
+                                                saveItemGoogleMapsUrl(type, item, googleMapsUrl)
+                                              }
+                                              onDelete={() => setPendingDeletion({ item, type })}
+                                              onMoveToBackup={() =>
+                                                void moveItemToBackup(type, item)
+                                              }
+                                              onOpenMap={() => onOpenMap(type, item.id)}
+                                            />
+                                          </div>
+                                        </SpreadsheetCell>
+                                      </tr>
+                                      <tr className="group-hover:bg-surface-soft">
+                                        <td
+                                          className="border-b border-border-divider px-3 pb-2 pt-0 text-sm"
+                                          colSpan={itineraryColumnCount}
+                                        >
+                                          {activeField === "notes" && draft ? (
+                                            <>
+                                              <textarea
+                                                aria-label={t("spreadsheet.notes")}
+                                                autoFocus
+                                                className="min-h-20 w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
+                                                onChange={(event) =>
+                                                  setDraft((current) =>
+                                                    current
+                                                      ? { ...current, notes: event.target.value }
+                                                      : current,
+                                                  )
+                                                }
+                                                value={draft.notes}
+                                              />
+                                              {renderActions("notes")}
+                                            </>
+                                          ) : (
+                                            <button
+                                              aria-label={t("spreadsheet.notes")}
+                                              className={`inline-block max-w-full min-h-5 cursor-text whitespace-pre-wrap break-words text-left transition hover:text-brand ${
+                                                item.notes?.trim()
+                                                  ? "text-on-surface"
+                                                  : "text-muted"
+                                              }`}
+                                              onClick={() => startEditing(type, item, "notes")}
+                                              type="button"
+                                            >
+                                              {item.notes?.trim()
+                                                ? item.notes
+                                                : t("spreadsheet.addNote")}
+                                            </button>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                  <div className="pointer-events-none absolute inset-y-0 right-0">
+                                    <TripItemPreferenceDistribution
+                                      itemId={item.id}
+                                      itemType={type}
+                                      orientation="vertical"
+                                      preferences={trip.preferences}
                                     />
-                                    {renderActions("title")}
-                                  </>
-                                ) : (
-                                  <button
-                                    className={`w-full cursor-text text-left underline decoration-2 underline-offset-4 transition hover:text-brand ${
-                                      type === "activity"
-                                        ? "decoration-type-activity"
-                                        : "decoration-type-meal"
-                                    }`}
-                                    onClick={() => startEditing(type, item, "title")}
-                                    type="button"
-                                  >
-                                    {getDayItemTitle(item, t("tripDetails.untitledItem"))}
-                                  </button>
-                                )}
-                              </SpreadsheetCell>
-                              <SpreadsheetCell className="border-b-0">
-                                {activeField === "startTime" && draft ? (
-                                  <>
-                                    <label className="flex items-center gap-1 text-xs text-muted">
-                                      <input
-                                        checked={draft.allDay}
-                                        onChange={(event) =>
-                                          setDraft((current) =>
-                                            current
-                                              ? { ...current, allDay: event.target.checked }
-                                              : current,
-                                          )
-                                        }
-                                        type="checkbox"
-                                      />
-                                      {t("spreadsheet.allDay")}
-                                    </label>
-                                    {!draft.allDay && (
-                                      <div className="mt-2">
-                                        <TimePicker
-                                          label={t("spreadsheet.start")}
-                                          onChange={(value) =>
-                                            setDraft((current) =>
-                                              current ? { ...current, startTime: value } : current,
-                                            )
-                                          }
-                                          value={draft.startTime}
-                                        />
-                                      </div>
-                                    )}
-                                    {renderActions("startTime")}
-                                  </>
-                                ) : (
-                                  <button
-                                    className="w-full cursor-text text-left transition hover:text-brand"
-                                    onClick={() => startEditing(type, item, "startTime")}
-                                    type="button"
-                                  >
-                                    {item.allDay ? t("spreadsheet.allDay") : item.startTime}
-                                  </button>
-                                )}
-                              </SpreadsheetCell>
-                              <SpreadsheetCell className="border-b-0">
-                                {activeField === "endTime" && draft ? (
-                                  <>
-                                    {!draft.allDay && (
-                                      <TimePicker
-                                        label={t("spreadsheet.end")}
-                                        onChange={(value) =>
-                                          setDraft((current) =>
-                                            current ? { ...current, endTime: value } : current,
-                                          )
-                                        }
-                                        value={draft.endTime}
-                                      />
-                                    )}
-                                    {renderActions("endTime")}
-                                  </>
-                                ) : (
-                                  <button
-                                    className="w-full cursor-text text-left transition hover:text-brand"
-                                    onClick={() => startEditing(type, item, "endTime")}
-                                    type="button"
-                                  >
-                                    {item.allDay ? t("spreadsheet.allDay") : item.endTime}
-                                  </button>
-                                )}
-                              </SpreadsheetCell>
-                              {showPrice && (
-                                <>
-                                  <SpreadsheetCell className="border-b-0">
-                                    {item.priceAmount}
-                                  </SpreadsheetCell>
-                                  <SpreadsheetCell className="border-b-0">
-                                    {item.priceCurrency}
-                                  </SpreadsheetCell>
-                                </>
-                              )}
-                              {showWebsite && (
-                                <SpreadsheetCell className="border-b-0">
-                                  {item.website}
-                                </SpreadsheetCell>
-                              )}
-                              <SpreadsheetCell className="border-b-0">
-                                <div className="flex items-start justify-end gap-2 pr-2">
-                                  <TripItemPreference
-                                    compact
-                                    disabled={savingPreferenceKey === `${type}:${item.id}`}
-                                    itemId={item.id}
-                                    itemType={type}
-                                    onChange={(value) =>
-                                      void handlePreferenceChange(type, item.id, value)
-                                    }
-                                    preferences={trip.preferences}
-                                    userId={userId}
-                                  />
-                                  <SpreadsheetItemActions
-                                    isBusy={isSaving}
-                                    item={item}
-                                    onChangeGoogleMapsUrl={(googleMapsUrl) =>
-                                      saveItemGoogleMapsUrl(type, item, googleMapsUrl)
-                                    }
-                                    onDelete={() => setPendingDeletion({ item, type })}
-                                    onMoveToBackup={() => void moveItemToBackup(type, item)}
-                                    onOpenMap={() => onOpenMap(type, item.id)}
-                                  />
-                                </div>
-                              </SpreadsheetCell>
-                            </tr>
-                            <tr className="group-hover:bg-surface-soft">
-                              <td
-                                className="border-b border-border-divider px-3 pb-2 pt-0 text-sm"
-                                colSpan={itineraryColumnCount}
-                              >
-                                {activeField === "notes" && draft ? (
-                                  <>
-                                    <textarea
-                                      aria-label={t("spreadsheet.notes")}
-                                      autoFocus
-                                      className="min-h-20 w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
-                                      onChange={(event) =>
-                                        setDraft((current) =>
-                                          current
-                                            ? { ...current, notes: event.target.value }
-                                            : current,
-                                        )
-                                      }
-                                      value={draft.notes}
-                                    />
-                                    {renderActions("notes")}
-                                  </>
-                                ) : (
-                                  <button
-                                    aria-label={t("spreadsheet.notes")}
-                                    className={`inline-block max-w-full min-h-5 cursor-text whitespace-pre-wrap break-words text-left transition hover:text-brand ${
-                                      item.notes?.trim() ? "text-on-surface" : "text-muted"
-                                    }`}
-                                    onClick={() => startEditing(type, item, "notes")}
-                                    type="button"
-                                  >
-                                    {item.notes?.trim() ? item.notes : t("spreadsheet.addNote")}
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                                  </tbody>
-                                </table>
-                                <div className="pointer-events-none absolute inset-y-0 right-0">
-                                  <TripItemPreferenceDistribution
-                                    itemId={item.id}
-                                    itemType={type}
-                                    orientation="vertical"
-                                    preferences={trip.preferences}
-                                  />
-                                </div>
+                                  </div>
                                 </td>
                               </tr>
                             </Fragment>
@@ -2073,19 +2419,23 @@ export function TripSpreadsheetPage({
         isOpen={pendingDeletion !== null}
         message={
           pendingDeletion
-            ? pendingDeletion.type === "activity"
-              ? t("tripDetails.deleteActivityConfirmation", {
-                  name:
-                    pendingDeletion.item.title ??
-                    pendingDeletion.item.placeName ??
-                    t("tripDetails.untitledItem"),
+            ? "housing" in pendingDeletion
+              ? t("tripDetails.deleteHousingConfirmation", {
+                  name: pendingDeletion.housing.name,
                 })
-              : t("tripDetails.deleteMealConfirmation", {
-                  name:
-                    pendingDeletion.item.title ??
-                    pendingDeletion.item.placeName ??
-                    t("tripDetails.untitledItem"),
-                })
+              : pendingDeletion.type === "activity"
+                ? t("tripDetails.deleteActivityConfirmation", {
+                    name:
+                      pendingDeletion.item.title ??
+                      pendingDeletion.item.placeName ??
+                      t("tripDetails.untitledItem"),
+                  })
+                : t("tripDetails.deleteMealConfirmation", {
+                    name:
+                      pendingDeletion.item.title ??
+                      pendingDeletion.item.placeName ??
+                      t("tripDetails.untitledItem"),
+                  })
             : ""
         }
         onCancel={() => setPendingDeletion(null)}
