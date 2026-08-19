@@ -77,6 +77,7 @@ const resources = {
       spreadsheet: {
         addActivity: "Legg til aktivitet",
         addMeal: "Legg til måltid",
+        addNote: "Legg til notat",
         activity: "Aktivitet",
         allDay: "Hele dagen",
         checkIn: "Innsjekk",
@@ -434,6 +435,7 @@ const resources = {
       spreadsheet: {
         addActivity: "Add activity",
         addMeal: "Add meal",
+        addNote: "Add note",
         activity: "Activity",
         allDay: "All day",
         checkIn: "Check-in",

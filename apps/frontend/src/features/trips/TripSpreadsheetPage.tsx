@@ -373,7 +373,7 @@ function SpreadsheetItemActions({
           <button
             aria-expanded={isMenuOpen}
             aria-label={t("common.menu")}
-            className="grid size-9 place-items-center rounded-xl border border-border bg-surface p-2 text-muted hover:bg-surface-muted hover:text-brand disabled:opacity-50"
+            className="flex size-9 items-center justify-center rounded-xl border border-border bg-surface p-2 text-muted hover:bg-surface-muted hover:text-brand disabled:opacity-50"
             disabled={isBusy}
             onClick={() => setIsMenuOpen((current) => !current)}
             title={t("common.menu")}
@@ -1412,7 +1412,6 @@ export function TripSpreadsheetPage({
                 <col className="w-48" />
                 <col className="w-16" />
                 <col className="w-16" />
-                <col className="w-48" />
                 {showPrice && (
                   <>
                     <col className="w-16" />
@@ -1428,7 +1427,6 @@ export function TripSpreadsheetPage({
                   <SpreadsheetHeaderCell>{t("spreadsheet.title")}</SpreadsheetHeaderCell>
                   <SpreadsheetHeaderCell>{t("spreadsheet.start")}</SpreadsheetHeaderCell>
                   <SpreadsheetHeaderCell>{t("spreadsheet.end")}</SpreadsheetHeaderCell>
-                  <SpreadsheetHeaderCell>{t("spreadsheet.notes")}</SpreadsheetHeaderCell>
                   {showPrice && (
                     <>
                       <SpreadsheetHeaderCell>{t("spreadsheet.price")}</SpreadsheetHeaderCell>
@@ -1775,7 +1773,7 @@ export function TripSpreadsheetPage({
                           return (
                             <Fragment key={itemKey}>
                               <tr
-                                className="hover:bg-surface-soft"
+                                className="group bg-surface hover:bg-surface-soft"
                                 data-drop-day={day.date}
                                 data-drop-item-index={itemIndex}
                                 draggable
@@ -1791,10 +1789,28 @@ export function TripSpreadsheetPage({
                                 }
                                 onDrop={(event) => void handleSpreadsheetDrop(event)}
                               >
-                              <SpreadsheetCell>
+                                <td className="relative border-b-0 p-0" colSpan={itineraryColumnCount}>
+                                  <table className="min-w-full table-fixed border-collapse text-left">
+                                    <colgroup>
+                                      <col className="w-30" />
+                                      <col className="w-48" />
+                                      <col className="w-16" />
+                                      <col className="w-16" />
+                                      {showPrice && (
+                                        <>
+                                          <col className="w-16" />
+                                          <col className="w-16" />
+                                        </>
+                                      )}
+                                      {showWebsite && <col className="w-32" />}
+                                      <col />
+                                    </colgroup>
+                                    <tbody>
+                                      <tr className="group-hover:bg-surface-soft">
+                              <SpreadsheetCell className="border-b-0">
                                 {formatDate(item.tripDate ?? day.date)}
                               </SpreadsheetCell>
-                              <SpreadsheetCell>
+                              <SpreadsheetCell className="border-b-0">
                                 {activeField === "title" && draft ? (
                                   <>
                                     <input
@@ -1826,7 +1842,7 @@ export function TripSpreadsheetPage({
                                   </button>
                                 )}
                               </SpreadsheetCell>
-                              <SpreadsheetCell>
+                              <SpreadsheetCell className="border-b-0">
                                 {activeField === "startTime" && draft ? (
                                   <>
                                     <label className="flex items-center gap-1 text-xs text-muted">
@@ -1868,7 +1884,7 @@ export function TripSpreadsheetPage({
                                   </button>
                                 )}
                               </SpreadsheetCell>
-                              <SpreadsheetCell>
+                              <SpreadsheetCell className="border-b-0">
                                 {activeField === "endTime" && draft ? (
                                   <>
                                     {!draft.allDay && (
@@ -1894,43 +1910,23 @@ export function TripSpreadsheetPage({
                                   </button>
                                 )}
                               </SpreadsheetCell>
-                              <SpreadsheetCell>
-                                {activeField === "notes" && draft ? (
-                                  <>
-                                    <textarea
-                                      aria-label={t("spreadsheet.notes")}
-                                      autoFocus
-                                      className="min-h-20 w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
-                                      onChange={(event) =>
-                                        setDraft((current) =>
-                                          current
-                                            ? { ...current, notes: event.target.value }
-                                            : current,
-                                        )
-                                      }
-                                      value={draft.notes}
-                                    />
-                                    {renderActions("notes")}
-                                  </>
-                                ) : (
-                                  <button
-                                    className="block min-h-5 w-full max-w-64 cursor-text whitespace-pre-wrap break-words text-left transition hover:text-brand"
-                                    onClick={() => startEditing(type, item, "notes")}
-                                    type="button"
-                                  >
-                                    {item.notes}
-                                  </button>
-                                )}
-                              </SpreadsheetCell>
                               {showPrice && (
                                 <>
-                                  <SpreadsheetCell>{item.priceAmount}</SpreadsheetCell>
-                                  <SpreadsheetCell>{item.priceCurrency}</SpreadsheetCell>
+                                  <SpreadsheetCell className="border-b-0">
+                                    {item.priceAmount}
+                                  </SpreadsheetCell>
+                                  <SpreadsheetCell className="border-b-0">
+                                    {item.priceCurrency}
+                                  </SpreadsheetCell>
                                 </>
                               )}
-                              {showWebsite && <SpreadsheetCell>{item.website}</SpreadsheetCell>}
-                              <SpreadsheetCell className="relative">
-                                <div className="flex items-start justify-end gap-1 pr-1">
+                              {showWebsite && (
+                                <SpreadsheetCell className="border-b-0">
+                                  {item.website}
+                                </SpreadsheetCell>
+                              )}
+                              <SpreadsheetCell className="border-b-0">
+                                <div className="flex items-start justify-end gap-2 pr-2">
                                   <TripItemPreference
                                     compact
                                     disabled={savingPreferenceKey === `${type}:${item.id}`}
@@ -1953,6 +1949,46 @@ export function TripSpreadsheetPage({
                                     onOpenMap={() => onOpenMap(type, item.id)}
                                   />
                                 </div>
+                              </SpreadsheetCell>
+                            </tr>
+                            <tr className="group-hover:bg-surface-soft">
+                              <td
+                                className="border-b border-border-divider px-3 pb-2 pt-0 text-sm"
+                                colSpan={itineraryColumnCount}
+                              >
+                                {activeField === "notes" && draft ? (
+                                  <>
+                                    <textarea
+                                      aria-label={t("spreadsheet.notes")}
+                                      autoFocus
+                                      className="min-h-20 w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
+                                      onChange={(event) =>
+                                        setDraft((current) =>
+                                          current
+                                            ? { ...current, notes: event.target.value }
+                                            : current,
+                                        )
+                                      }
+                                      value={draft.notes}
+                                    />
+                                    {renderActions("notes")}
+                                  </>
+                                ) : (
+                                  <button
+                                    aria-label={t("spreadsheet.notes")}
+                                    className={`inline-block max-w-full min-h-5 cursor-text whitespace-pre-wrap break-words text-left transition hover:text-brand ${
+                                      item.notes?.trim() ? "text-on-surface" : "text-muted"
+                                    }`}
+                                    onClick={() => startEditing(type, item, "notes")}
+                                    type="button"
+                                  >
+                                    {item.notes?.trim() ? item.notes : t("spreadsheet.addNote")}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                                  </tbody>
+                                </table>
                                 <div className="pointer-events-none absolute inset-y-0 right-0">
                                   <TripItemPreferenceDistribution
                                     itemId={item.id}
@@ -1961,8 +1997,8 @@ export function TripSpreadsheetPage({
                                     preferences={trip.preferences}
                                   />
                                 </div>
-                              </SpreadsheetCell>
-                            </tr>
+                                </td>
+                              </tr>
                             </Fragment>
                           )
                         })
