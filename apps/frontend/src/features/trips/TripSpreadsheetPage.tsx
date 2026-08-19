@@ -2,6 +2,7 @@ import { Fragment, useState, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import { updateActivity, updateMeal, type Activity, type Meal, type TripDetail } from "../../api"
 import { GoogleMapsLinkButton } from "../../components/GoogleMapsLinkButton"
+import { TimePicker } from "../../components/TimePicker"
 import { getDayItemTitle, sortDayItems } from "../../lib/activity-format"
 import { formatLongDate } from "../../lib/date-format"
 import { getErrorMessage } from "../../lib/errors"
@@ -393,20 +394,17 @@ export function TripSpreadsheetPage({
                                       {t("spreadsheet.allDay")}
                                     </label>
                                     {!draft.allDay && (
-                                      <input
-                                        aria-label={t("spreadsheet.start")}
-                                        autoFocus
-                                        className="mt-2 w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
-                                        onChange={(event) =>
-                                          setDraft((current) =>
-                                            current
-                                              ? { ...current, startTime: event.target.value }
-                                              : current,
-                                          )
-                                        }
-                                        type="time"
-                                        value={draft.startTime}
-                                      />
+                                      <div className="mt-2">
+                                        <TimePicker
+                                          label={t("spreadsheet.start")}
+                                          onChange={(value) =>
+                                            setDraft((current) =>
+                                              current ? { ...current, startTime: value } : current,
+                                            )
+                                          }
+                                          value={draft.startTime}
+                                        />
+                                      </div>
                                     )}
                                     {renderActions("startTime")}
                                   </>
@@ -424,18 +422,13 @@ export function TripSpreadsheetPage({
                                 {activeField === "endTime" && draft ? (
                                   <>
                                     {!draft.allDay && (
-                                      <input
-                                        aria-label={t("spreadsheet.end")}
-                                        autoFocus
-                                        className="w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-on-surface outline-none focus:border-brand"
-                                        onChange={(event) =>
+                                      <TimePicker
+                                        label={t("spreadsheet.end")}
+                                        onChange={(value) =>
                                           setDraft((current) =>
-                                            current
-                                              ? { ...current, endTime: event.target.value }
-                                              : current,
+                                            current ? { ...current, endTime: value } : current,
                                           )
                                         }
-                                        type="time"
                                         value={draft.endTime}
                                       />
                                     )}

@@ -48,6 +48,9 @@ function formatTime(hours: number, minutes: number) {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`
 }
 
+const minutePresets = [0, 15, 30, 45]
+const hourPresets = Array.from({ length: 24 }, (_, hour) => hour)
+
 export function TimePicker({ label, value, onChange }: TimePickerProps) {
   const { i18n, t } = useTranslation()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -62,15 +65,13 @@ export function TimePicker({ label, value, onChange }: TimePickerProps) {
   const locale = getDateLocale(i18n.language)
   const enteredHour = draftHourInput === "" ? null : Number(draftHourInput)
   const enteredMinute = draftMinuteInput === "" ? null : Number(draftMinuteInput)
-  const hasInvalidHour =
-    enteredHour === null || !Number.isInteger(enteredHour) || enteredHour < 0 || enteredHour > 23
-  const hasInvalidMinute =
-    enteredMinute === null ||
-    !Number.isInteger(enteredMinute) ||
-    enteredMinute < 0 ||
-    enteredMinute > 59
   const draftTime =
-    enteredHour !== null && enteredMinute !== null && !hasInvalidHour && !hasInvalidMinute
+    enteredHour !== null &&
+    enteredMinute !== null &&
+    Number.isInteger(enteredHour) &&
+    Number.isInteger(enteredMinute) &&
+    hourPresets.includes(enteredHour) &&
+    minutePresets.includes(enteredMinute)
       ? { hours: enteredHour, minutes: enteredMinute }
       : null
   const cancelPicker = useCallback(() => {
@@ -134,10 +135,6 @@ export function TimePicker({ label, value, onChange }: TimePickerProps) {
     setDraftFromValue(value)
     setPopoverPosition(getPickerPosition(containerRef.current))
     setIsOpen(true)
-  }
-
-  function handleNumericInput(input: string) {
-    return input.replace(/\D/g, "").slice(0, 2)
   }
 
   function clearPicker() {
@@ -221,65 +218,61 @@ export function TimePicker({ label, value, onChange }: TimePickerProps) {
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <label className="grid content-start gap-2">
+              <div className="grid content-start gap-2">
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted">
                   {t("timePicker.hour")}
                 </span>
-                <input
-                  aria-invalid={hasInvalidHour && draftHourInput !== ""}
+                <div
                   aria-label={t("timePicker.hour")}
-                  autoComplete="off"
-                  className={`min-h-12 w-full rounded-xl border bg-surface px-3 text-center text-2xl font-semibold tabular-nums text-on-surface outline-none transition focus:ring-2 focus:ring-soft ${
-                    hasInvalidHour && draftHourInput !== ""
-                      ? "border-error-strong focus:border-error-strong"
-                      : "border-border focus:border-brand"
-                  }`}
-                  inputMode="numeric"
-                  maxLength={2}
-                  onChange={(event) => setDraftHourInput(handleNumericInput(event.target.value))}
-                  placeholder="HH"
-                  type="text"
-                  value={draftHourInput}
-                />
+                  className="grid grid-cols-4 gap-1"
+                  role="group"
+                >
+                  {hourPresets.map((hour) => (
+                    <button
+                      aria-pressed={enteredHour === hour}
+                      className={`rounded-lg border px-2 py-2 text-sm font-semibold tabular-nums transition ${
+                        enteredHour === hour
+                          ? "border-brand bg-brand-surface text-on-brand"
+                          : "border-border text-muted hover:border-brand hover:text-brand"
+                      }`}
+                      key={hour}
+                      onClick={() => setDraftHourInput(String(hour).padStart(2, "0"))}
+                      type="button"
+                    >
+                      {String(hour).padStart(2, "0")}
+                    </button>
+                  ))}
+                </div>
                 <span className="text-center text-xs font-normal text-muted">
                   {t("timePicker.hourHint")}
                 </span>
-              </label>
-              <label className="grid content-start gap-2">
+              </div>
+              <div className="grid content-start gap-2">
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted">
                   {t("timePicker.minute")}
                 </span>
-                <input
-                  aria-invalid={hasInvalidMinute && draftMinuteInput !== ""}
-                  aria-label={t("timePicker.minute")}
-                  className={`min-h-12 w-full rounded-xl border bg-surface px-3 text-center text-2xl font-semibold tabular-nums text-on-surface outline-none transition focus:ring-2 focus:ring-soft ${
-                    hasInvalidMinute && draftMinuteInput !== ""
-                      ? "border-error-strong focus:border-error-strong"
-                      : "border-border focus:border-brand"
-                  }`}
-                  inputMode="numeric"
-                  maxLength={2}
-                  onChange={(event) => setDraftMinuteInput(handleNumericInput(event.target.value))}
-                  placeholder="00"
-                  type="text"
-                  value={draftMinuteInput}
-                />
+                <div className="grid grid-cols-4 gap-1">
+                  {minutePresets.map((minute) => (
+                    <button
+                      aria-pressed={enteredMinute === minute}
+                      className={`rounded-lg border px-2 py-1.5 text-xs font-semibold tabular-nums transition ${
+                        enteredMinute === minute
+                          ? "border-brand bg-brand-surface text-on-brand"
+                          : "border-border text-muted hover:border-brand hover:text-brand"
+                      }`}
+                      key={minute}
+                      onClick={() => setDraftMinuteInput(String(minute).padStart(2, "0"))}
+                      type="button"
+                    >
+                      {String(minute).padStart(2, "0")}
+                    </button>
+                  ))}
+                </div>
                 <span className="text-center text-xs font-normal text-muted">
                   {t("timePicker.minuteHint")}
                 </span>
-              </label>
+              </div>
             </div>
-
-            {hasInvalidHour && draftHourInput !== "" && (
-              <p className="mt-2 text-sm text-error-strong" role="alert">
-                {t("timePicker.hourInvalid")}
-              </p>
-            )}
-            {hasInvalidMinute && draftMinuteInput !== "" && (
-              <p className="mt-2 text-sm text-error-strong" role="alert">
-                {t("timePicker.minuteInvalid")}
-              </p>
-            )}
 
             <div className="mt-5 flex justify-end gap-2 border-t border-border-divider pt-4">
               <button
