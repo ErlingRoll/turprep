@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState, type DragEvent, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
 import {
   updateActivity,
@@ -74,6 +75,7 @@ type ItineraryRow = {
 type SpreadsheetDropTarget = {
   dayDate: string
   index: number
+  lineY: number
 }
 
 type SpreadsheetDraggedItem = {
@@ -171,11 +173,6 @@ function getItineraryRowKey(row: ItineraryRow) {
   return `${row.type}:${row.item.id}`
 }
 
-function getDropIndex(event: DragEvent<HTMLTableRowElement>, itemIndex: number) {
-  const bounds = event.currentTarget.getBoundingClientRect()
-  return event.clientY >= bounds.top + bounds.height / 2 ? itemIndex + 1 : itemIndex
-}
-
 function isDragBlockedTarget(target: EventTarget | null) {
   return target instanceof HTMLElement &&
     Boolean(target.closest("button, input, select, textarea, [contenteditable='true']"))
@@ -231,10 +228,12 @@ export function TripSpreadsheetPage({
   const [housingDraft, setHousingDraft] = useState<HousingDraft | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [draggedItem, setDraggedItem] = useState<SpreadsheetDraggedItem | null>(null)
-  const [dropTarget, setDropTarget] = useState<SpreadsheetDropTarget | null>(null)
+  const [dropTarget, setDropTargetState] = useState<SpreadsheetDropTarget | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [reorderError, setReorderError] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
+  const tableRef = useRef<HTMLTableElement>(null)
+  const dropTargetRef = useRef<SpreadsheetDropTarget | null>(null)
   const latestTripRef = useRef(trip)
   const reorderQueueRef = useRef(Promise.resolve())
   const pendingReorderCountRef = useRef(0)
@@ -275,6 +274,71 @@ export function TripSpreadsheetPage({
       latestTripRef.current = trip
     }
   }, [trip])
+
+  const dropLineBounds = tableRef.current?.getBoundingClientRect()
+  const draggedItemKey = draggedItem
+    ? `${draggedItem.itemType}:${draggedItem.itemId}`
+    : null
+  const draggedItemSourceIndex = draggedItem
+    ? getItineraryRows(latestTripRef.current, draggedItem.dayDate).findIndex(
+        (row) => getItineraryRowKey(row) === draggedItemKey,
+      )
+    : -1
+  const isDropLineSuppressed =
+    draggedItemSourceIndex >= 0 &&
+    dropTarget?.dayDate === draggedItem?.dayDate &&
+    (dropTarget?.index === draggedItemSourceIndex ||
+      dropTarget?.index === draggedItemSourceIndex + 1)
+
+  function setDropTarget(nextTarget: SpreadsheetDropTarget | null) {
+    dropTargetRef.current = nextTarget
+    setDropTargetState(nextTarget)
+  }
+
+  function getNearestDropTarget(dayDate: string, clientY: number) {
+    const table = tableRef.current
+    if (!table) {
+      return null
+    }
+
+    const itemRows = Array.from(
+      table.querySelectorAll<HTMLTableRowElement>(
+        `tr[data-drop-day="${dayDate}"][data-drop-item-index]`,
+      ),
+    )
+    const landingZones =
+      itemRows.length > 0
+        ? (() => {
+            const rowBounds = itemRows.map((row) => row.getBoundingClientRect())
+            return [
+              { index: 0, lineY: rowBounds[0].top },
+              ...rowBounds.slice(1).map((bounds, index) => ({
+                index: index + 1,
+                lineY: (rowBounds[index].bottom + bounds.top) / 2,
+              })),
+              { index: rowBounds.length, lineY: rowBounds.at(-1)?.bottom ?? rowBounds[0].bottom },
+            ]
+          })()
+        : (() => {
+            const emptyRow = table.querySelector<HTMLTableRowElement>(
+              `tr[data-drop-empty-day="${dayDate}"]`,
+            )
+            if (!emptyRow) {
+              return []
+            }
+
+            const bounds = emptyRow.getBoundingClientRect()
+            return [{ index: 0, lineY: bounds.top + bounds.height / 2 }]
+          })()
+
+    return landingZones.reduce<SpreadsheetDropTarget | null>((nearest, zone) => {
+      const candidate = { dayDate, ...zone }
+      return !nearest ||
+        Math.abs(candidate.lineY - clientY) < Math.abs(nearest.lineY - clientY)
+        ? candidate
+        : nearest
+    }, null)
+  }
 
   function getReorderInput(nextTrip: TripDetail): ReorderDayItemInput[] {
     return nextTrip.days.flatMap((day) =>
@@ -380,7 +444,6 @@ export function TripSpreadsheetPage({
   function handleSpreadsheetDragOver(
     event: DragEvent<HTMLTableRowElement>,
     dayDate: string,
-    itemIndex: number,
   ) {
     if (!draggedItem) {
       return
@@ -388,16 +451,16 @@ export function TripSpreadsheetPage({
 
     event.preventDefault()
     event.dataTransfer.dropEffect = "move"
-    const nextDropTarget = {
-      dayDate,
-      index: getDropIndex(event, itemIndex),
+    const nextDropTarget = getNearestDropTarget(dayDate, event.clientY)
+    const currentTarget = dropTargetRef.current
+    if (
+      nextDropTarget &&
+      (currentTarget?.dayDate !== nextDropTarget.dayDate ||
+        currentTarget.index !== nextDropTarget.index ||
+        currentTarget.lineY !== nextDropTarget.lineY)
+    ) {
+      setDropTarget(nextDropTarget)
     }
-    setDropTarget((currentTarget) =>
-      currentTarget?.dayDate === nextDropTarget.dayDate &&
-      currentTarget.index === nextDropTarget.index
-        ? currentTarget
-        : nextDropTarget,
-    )
   }
 
   function handleSpreadsheetDragEnd() {
@@ -451,22 +514,22 @@ export function TripSpreadsheetPage({
 
   async function handleSpreadsheetDrop(
     event: DragEvent<HTMLTableRowElement>,
-    targetDate: string,
-    rawTargetIndex: number,
   ) {
     event.preventDefault()
     event.stopPropagation()
 
+    const selectedDropTarget = dropTargetRef.current
     const draggedItemKey = draggedItem
       ? `${draggedItem.itemType}:${draggedItem.itemId}`
       : event.dataTransfer.getData("text/plain")
     setDraggedItem(null)
     setDropTarget(null)
 
-    if (!draggedItemKey) {
+    if (!draggedItemKey || !selectedDropTarget) {
       return
     }
 
+    const { dayDate: targetDate, index: rawTargetIndex } = selectedDropTarget
     const currentTrip = latestTripRef.current
     const sourceDate =
       draggedItem?.dayDate ??
@@ -554,20 +617,11 @@ export function TripSpreadsheetPage({
   }
 
   function handleSpreadsheetDayDragOver(event: DragEvent<HTMLTableRowElement>, dayDate: string) {
-    if (!draggedItem) {
-      return
-    }
-
-    event.preventDefault()
-    event.dataTransfer.dropEffect = "move"
-    setDropTarget({ dayDate, index: 0 })
+    handleSpreadsheetDragOver(event, dayDate)
   }
 
-  async function handleSpreadsheetDayDrop(
-    event: DragEvent<HTMLTableRowElement>,
-    dayDate: string,
-  ) {
-    await handleSpreadsheetDrop(event, dayDate, 0)
+  async function handleSpreadsheetDayDrop(event: DragEvent<HTMLTableRowElement>) {
+    await handleSpreadsheetDrop(event)
   }
 
   function startEditing(type: ItineraryRow["type"], item: Activity | Meal, field: EditableField) {
@@ -804,7 +858,10 @@ export function TripSpreadsheetPage({
 
         <div className="relative left-1/2 mt-5 w-screen -translate-x-1/2 px-2">
           <div className="mx-auto w-fit rounded-2xl border border-border-card bg-surface">
-            <table className="mx-auto w-max min-w-[83rem] table-fixed border-collapse text-left">
+            <table
+              className="mx-auto w-max min-w-[83rem] table-fixed border-collapse text-left"
+              ref={tableRef}
+            >
               <colgroup>
                 <col className="w-52" />
                 <col className="w-30" />
@@ -860,7 +917,7 @@ export function TripSpreadsheetPage({
                       <tr
                         className="bg-page"
                         onDragOver={(event) => handleSpreadsheetDayDragOver(event, day.date)}
-                        onDrop={(event) => void handleSpreadsheetDayDrop(event, day.date)}
+                        onDrop={(event) => void handleSpreadsheetDayDrop(event)}
                       >
                         {startsHousingBlock && (
                           <td
@@ -1104,13 +1161,9 @@ export function TripSpreadsheetPage({
                       </tr>
                       {rows.length === 0 ? (
                         <tr
-                          className={
-                            dropTarget?.dayDate === day.date && dropTarget.index === 0
-                              ? "border-y-4 border-brand bg-surface-muted"
-                              : ""
-                          }
+                          data-drop-empty-day={day.date}
                           onDragOver={(event) => handleSpreadsheetDayDragOver(event, day.date)}
-                          onDrop={(event) => void handleSpreadsheetDayDrop(event, day.date)}
+                          onDrop={(event) => void handleSpreadsheetDayDrop(event)}
                         >
                           <td
                             className="border-b border-border-divider px-3 py-2 text-sm text-muted"
@@ -1125,10 +1178,6 @@ export function TripSpreadsheetPage({
                           const activeField = editingFieldKey?.startsWith(`${itemKey}:`)
                             ? (editingFieldKey.slice(itemKey.length + 1) as EditableField)
                             : null
-                          const isDropBefore =
-                            dropTarget?.dayDate === day.date && dropTarget.index === itemIndex
-                          const isDropAfter =
-                            dropTarget?.dayDate === day.date && dropTarget.index === itemIndex + 1
                           const renderActions = (field: EditableField) => (
                             <div className="mt-2 flex flex-wrap gap-2">
                               <button
@@ -1155,19 +1204,13 @@ export function TripSpreadsheetPage({
 
                           return (
                             <tr
-                              className={`hover:bg-surface-soft ${
-                                isDropBefore
-                                  ? "border-t-4 border-brand bg-surface-muted"
-                                  : ""
-                              } ${
-                                isDropAfter
-                                  ? "border-b-4 border-brand bg-surface-muted"
-                                  : ""
-                              }`}
+                              className="hover:bg-surface-soft"
+                              data-drop-day={day.date}
+                              data-drop-item-index={itemIndex}
                               draggable
                               key={itemKey}
                               onDragOver={(event) =>
-                                handleSpreadsheetDragOver(event, day.date, itemIndex)
+                                handleSpreadsheetDragOver(event, day.date)
                               }
                               onDragEnd={handleSpreadsheetDragEnd}
                               onDragStart={(event) =>
@@ -1176,13 +1219,7 @@ export function TripSpreadsheetPage({
                                   type,
                                 })
                               }
-                              onDrop={(event) =>
-                                void handleSpreadsheetDrop(
-                                  event,
-                                  day.date,
-                                  getDropIndex(event, itemIndex),
-                                )
-                              }
+                              onDrop={(event) => void handleSpreadsheetDrop(event)}
                             >
                               <SpreadsheetCell>
                                 {formatLongDate(item.tripDate ?? day.date)}
@@ -1346,6 +1383,23 @@ export function TripSpreadsheetPage({
                 })}
               </tbody>
             </table>
+            {dropLineBounds &&
+              dropTarget &&
+              draggedItem &&
+              !isDropLineSuppressed &&
+              createPortal(
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none fixed z-30 h-0.5 bg-brand shadow-sm"
+                  data-drop-indicator
+                  style={{
+                    left: dropLineBounds.left,
+                    top: dropTarget.lineY - 1,
+                    width: dropLineBounds.width,
+                  }}
+                />,
+                document.body,
+              )}
           </div>
         </div>
       </div>
