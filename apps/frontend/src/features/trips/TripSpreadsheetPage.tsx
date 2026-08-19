@@ -11,6 +11,7 @@ import {
 } from "../../api"
 import { DatePicker } from "../../components/DatePicker"
 import { GoogleMapsLinkButton } from "../../components/GoogleMapsLinkButton"
+import { SettingsIcon } from "../../components/SettingsIcon"
 import { TimePicker } from "../../components/TimePicker"
 import { getDateLocale } from "../../i18n"
 import { getDayItemTitle, sortDayItems } from "../../lib/activity-format"
@@ -23,9 +24,11 @@ import {
   replaceHousingStayInTrip,
   replaceMealInTrip,
 } from "./trip-state"
+import { TripSettings } from "./TripSettings"
 
 type TripSpreadsheetPageProps = {
   accessToken: string
+  onTripDeleted: (trip: TripDetail) => Promise<void>
   onTripUpdated: (trip: TripDetail) => void
   trip: TripDetail
   showDetails: boolean
@@ -131,6 +134,7 @@ function LinkCell({ href, label }: { href: string | null; label: string }) {
 
 export function TripSpreadsheetPage({
   accessToken,
+  onTripDeleted,
   onTripUpdated,
   trip,
   showDetails,
@@ -143,6 +147,7 @@ export function TripSpreadsheetPage({
   const [housingDraft, setHousingDraft] = useState<HousingDraft | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [showSettings, setShowSettings] = useState(false)
   const showPrice = showDetails && trip.itemDetailVisibility.showPrice
   const showWebsite = showDetails && trip.itemDetailVisibility.showWebsite
   const currencies =
@@ -377,13 +382,33 @@ export function TripSpreadsheetPage({
             <h2 className="mt-1 text-2xl font-semibold text-brand">{t("spreadsheet.itinerary")}</h2>
             <p className="mt-2 text-sm text-muted">{t("spreadsheet.readOnlyDescription")}</p>
           </div>
-          <p className="text-sm text-muted">
-            {t("spreadsheet.tripDates", {
-              start: formatLongDate(trip.startDate),
-              end: formatLongDate(trip.endDate),
-            })}
-          </p>
+          <div className="flex items-center gap-3">
+            <p className="text-sm text-muted">
+              {t("spreadsheet.tripDates", {
+                start: formatLongDate(trip.startDate),
+                end: formatLongDate(trip.endDate),
+              })}
+            </p>
+            <button
+              aria-expanded={showSettings}
+              aria-label={t("tripDetails.settings")}
+              className="grid size-10 place-items-center rounded-xl border border-border bg-surface text-muted transition hover:border-brand hover:text-brand"
+              onClick={() => setShowSettings((current) => !current)}
+              type="button"
+            >
+              <SettingsIcon />
+            </button>
+          </div>
         </div>
+        {showSettings && (
+          <TripSettings
+            accessToken={accessToken}
+            onClose={() => setShowSettings(false)}
+            onDelete={onTripDeleted}
+            onSaved={onTripUpdated}
+            trip={trip}
+          />
+        )}
 
         <div className="relative left-1/2 mt-5 w-screen -translate-x-1/2 px-2">
           <div className="mx-auto w-fit rounded-2xl border border-border-card bg-surface">

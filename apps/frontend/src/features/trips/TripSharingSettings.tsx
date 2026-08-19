@@ -67,6 +67,32 @@ export function TripSharingSettings({
     }
   }, [accessToken, onCanManageChange, trip.id])
 
+  useEffect(() => {
+    if (!sharing?.canManage) {
+      return
+    }
+
+    let isMounted = true
+    const refreshInterval = window.setInterval(() => {
+      getTripSharing(accessToken, trip.id)
+        .then((nextSharing) => {
+          if (isMounted) {
+            setSharing(nextSharing)
+          }
+        })
+        .catch((reason: unknown) => {
+          if (isMounted) {
+            setError(getErrorMessage(reason))
+          }
+        })
+    }, 3000)
+
+    return () => {
+      isMounted = false
+      window.clearInterval(refreshInterval)
+    }
+  }, [accessToken, sharing?.canManage, trip.id])
+
   if (isLoading) {
     return (
       <section className="mt-5 border-t border-border-card pt-5">

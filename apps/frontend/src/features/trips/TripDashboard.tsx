@@ -342,6 +342,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
             isDesktop ? (
               <TripSpreadsheetPage
                 accessToken={session.access_token}
+                onTripDeleted={handleDeleteTrip}
                 onTripUpdated={handleTripUpdated}
                 showDetails={showItemDetails}
                 trip={selectedTrip}

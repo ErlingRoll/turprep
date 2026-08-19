@@ -58,6 +58,39 @@ export function TripAccessRequestScreen({ accessToken }: TripAccessRequestScreen
     }
   }, [accessToken, navigate, tripId])
 
+  useEffect(() => {
+    if (!tripId || accessStatus?.status !== "pending") {
+      return
+    }
+
+    let isMounted = true
+    const statusInterval = window.setInterval(() => {
+      getTripAccessStatus(accessToken, tripId)
+        .then((status) => {
+          if (!isMounted) {
+            return
+          }
+
+          if (status.status === "approved") {
+            navigate(`/trips/${tripId}`, { replace: true })
+            return
+          }
+
+          setAccessStatus(status)
+        })
+        .catch((reason: unknown) => {
+          if (isMounted) {
+            setError(getErrorMessage(reason))
+          }
+        })
+    }, 3000)
+
+    return () => {
+      isMounted = false
+      window.clearInterval(statusInterval)
+    }
+  }, [accessToken, accessStatus?.status, navigate, tripId])
+
   async function handleRequest() {
     if (!tripId || (!invitationId && !accessLinkToken) || accessStatus?.status !== "none") {
       setError(t("tripAccess.invalidLink"))
