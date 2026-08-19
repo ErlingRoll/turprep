@@ -58,6 +58,7 @@ type TripSpreadsheetPageProps = {
   accessToken: string
   onTripDeleted: (trip: TripDetail) => Promise<void>
   onOpenMap: (itemType: "activity" | "meal", itemId: string) => void
+  onPreferencePendingChange: (isPending: boolean) => void
   onReorderPendingChange: (isPending: boolean) => void
   onTripUpdated: (trip: TripDetail) => void
   trip: TripDetail
@@ -471,6 +472,7 @@ export function TripSpreadsheetPage({
   accessToken,
   onTripDeleted,
   onOpenMap,
+  onPreferencePendingChange,
   onReorderPendingChange,
   onTripUpdated,
   trip,
@@ -501,6 +503,7 @@ export function TripSpreadsheetPage({
   const latestTripRef = useRef(trip)
   const reorderQueueRef = useRef(Promise.resolve())
   const pendingReorderCountRef = useRef(0)
+  const pendingPreferenceCountRef = useRef(0)
   const reorderGenerationRef = useRef(0)
   const showPrice = showDetails && trip.itemDetailVisibility.showPrice
   const showWebsite = showDetails && trip.itemDetailVisibility.showWebsite
@@ -807,7 +810,8 @@ export function TripSpreadsheetPage({
     value: TripItemPreferenceValue | null,
   ) {
     const preferenceKey = `${itemType}:${itemId}`
-    const previousPreferences = trip.preferences
+    const previousPreferences = latestTripRef.current.preferences
+    const currentTrip = latestTripRef.current
     const nextPreferences = previousPreferences.filter(
       (preference) =>
         !(
@@ -829,9 +833,13 @@ export function TripSpreadsheetPage({
       })
     }
 
+    if (pendingPreferenceCountRef.current === 0) {
+      onPreferencePendingChange(true)
+    }
+    pendingPreferenceCountRef.current += 1
     setSavingPreferenceKey(preferenceKey)
     setSaveError(null)
-    onTripUpdated({ ...trip, preferences: nextPreferences })
+    onTripUpdated({ ...currentTrip, preferences: nextPreferences })
 
     try {
       const savedPreference = await setTripItemPreference(accessToken, trip.id, {
@@ -839,7 +847,7 @@ export function TripSpreadsheetPage({
         itemId,
         value,
       })
-      const reconciledPreferences = nextPreferences.filter(
+      const reconciledPreferences = latestTripRef.current.preferences.filter(
         (preference) =>
           !(
             preference.userId === userId &&
@@ -852,11 +860,32 @@ export function TripSpreadsheetPage({
         reconciledPreferences.push(savedPreference)
       }
 
-      onTripUpdated({ ...trip, preferences: reconciledPreferences })
+      onTripUpdated({ ...latestTripRef.current, preferences: reconciledPreferences })
     } catch (reason: unknown) {
-      onTripUpdated({ ...trip, preferences: previousPreferences })
+      const rolledBackPreferences = latestTripRef.current.preferences.filter(
+        (preference) =>
+          !(
+            preference.userId === userId &&
+            preference.itemType === itemType &&
+            preference.itemId === itemId
+          ),
+      )
+      const previousPreference = previousPreferences.find(
+        (preference) =>
+          preference.userId === userId &&
+          preference.itemType === itemType &&
+          preference.itemId === itemId,
+      )
+      if (previousPreference) {
+        rolledBackPreferences.push(previousPreference)
+      }
+      onTripUpdated({ ...latestTripRef.current, preferences: rolledBackPreferences })
       setSaveError(getErrorMessage(reason))
     } finally {
+      pendingPreferenceCountRef.current -= 1
+      if (pendingPreferenceCountRef.current === 0) {
+        onPreferencePendingChange(false)
+      }
       setSavingPreferenceKey(null)
     }
   }
@@ -1785,7 +1814,7 @@ export function TripSpreadsheetPage({
                                 className="group bg-surface hover:bg-surface-soft"
                                 data-drop-day={day.date}
                                 data-drop-item-index={itemIndex}
-                                draggable
+                                draggable={!activeField && !housingEditingKey}
                                 onDragOver={(event) =>
                                   handleSpreadsheetDragOver(event, day.date)
                                 }
