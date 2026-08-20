@@ -276,6 +276,32 @@ test("health endpoint is public", async () => {
   assert.equal(response.body.status, "ok")
 })
 
+test("local development exposes unexpected backend error messages", async () => {
+  const previousNodeEnv = process.env.NODE_ENV
+  process.env.NODE_ENV = "development"
+
+  try {
+    const response = await request(
+      createTestApp(undefined, testTripDetail, {
+        getTrip: async () => {
+          throw new Error("Places API response was malformed")
+        },
+      }),
+    )
+      .get("/api/trips/trip-1")
+      .set("Authorization", "Bearer valid-token")
+
+    assert.equal(response.status, 500)
+    assert.equal(response.body.message, "Places API response was malformed")
+  } finally {
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV
+    } else {
+      process.env.NODE_ENV = previousNodeEnv
+    }
+  }
+})
+
 test("trip list requires authentication", async () => {
   const response = await request(createTestApp()).get("/api/trips")
 

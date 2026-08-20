@@ -146,31 +146,43 @@ async function requestGooglePlaces(
   query: string,
   locationBias: PlaceSearchLocationBias | null,
 ): Promise<ResolvedGooglePlace> {
-  const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Goog-Api-Key": apiKey,
-      "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.location",
-    },
-    body: JSON.stringify({
-      languageCode: "nb",
-      textQuery: query,
-      ...(locationBias
-        ? {
-            locationBias: {
-              circle: {
-                center: {
-                  latitude: locationBias.latitude,
-                  longitude: locationBias.longitude,
+  let response: Response
+
+  try {
+    response = await fetch("https://places.googleapis.com/v1/places:searchText", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.location",
+      },
+      body: JSON.stringify({
+        languageCode: "nb",
+        textQuery: query,
+        ...(locationBias
+          ? {
+              locationBias: {
+                circle: {
+                  center: {
+                    latitude: locationBias.latitude,
+                    longitude: locationBias.longitude,
+                  },
+                  radius: locationBias.radius,
                 },
-                radius: locationBias.radius,
               },
-            },
-          }
-        : {}),
-    }),
-  })
+            }
+          : {}),
+      }),
+    })
+  } catch {
+    const fallback = getPlaceUrlFallback(query, locationBias)
+
+    if (fallback) {
+      return fallback
+    }
+
+    throw new GooglePlacesError("Could not resolve Google Maps link", 503)
+  }
 
   if (!response.ok) {
     const fallback = getPlaceUrlFallback(query, locationBias)
@@ -182,7 +194,21 @@ async function requestGooglePlaces(
     throw new GooglePlacesError("Could not resolve Google Maps link")
   }
 
-  const result = placeSearchSchema.safeParse(await response.json())
+  let responseBody: unknown
+
+  try {
+    responseBody = await response.json()
+  } catch {
+    const fallback = getPlaceUrlFallback(query, locationBias)
+
+    if (fallback) {
+      return fallback
+    }
+
+    throw new GooglePlacesError("Could not resolve Google Maps link", 503)
+  }
+
+  const result = placeSearchSchema.safeParse(responseBody)
 
   if (!result.success) {
     const fallback = getPlaceUrlFallback(query, locationBias)
@@ -207,8 +233,8 @@ async function requestGooglePlaces(
   return {
     name: result.data.places[0].displayName.text,
     address: result.data.places[0].formattedAddress ?? query,
-    latitude: result.data.places[0].location?.latitude ?? null,
-    longitude: result.data.places[0].location?.longitude ?? null,
+    latitude: result.data.places[0].location?.latitude ?? locationBias?.latitude ?? null,
+    longitude: result.data.places[0].location?.longitude ?? locationBias?.longitude ?? null,
   }
 }
 

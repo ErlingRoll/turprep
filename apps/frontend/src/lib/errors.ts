@@ -1,6 +1,6 @@
 import { MAX_TRIP_DAYS } from "@turprep/models"
 import i18n from "../i18n"
-import { markHttpErrorHandled } from "./http-errors"
+import { HttpError, markHttpErrorHandled } from "./http-errors"
 
 const errorTranslations: Record<string, string> = {
   "Authentication required": "errors.authenticationRequired",
@@ -41,6 +41,10 @@ export function getErrorMessage(reason: unknown) {
   const translationKey = errorTranslations[reason.message]
 
   if (!translationKey) {
+    if (import.meta.env.DEV && reason instanceof HttpError) {
+      return reason.message
+    }
+
     return i18n.t("errors.generic")
   }
 

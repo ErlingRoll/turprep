@@ -1838,7 +1838,11 @@ export function createApp(dependencies: AppDependencies = {}) {
 
   const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => {
     console.error(error)
-    response.status(500).json({ message: "Internal server error" })
+    const isLocalDevelopment = process.env.NODE_ENV !== "production"
+    const message =
+      isLocalDevelopment && error instanceof Error ? error.message : "Internal server error"
+
+    response.status(500).json({ message })
   }
 
   app.use(errorHandler)
