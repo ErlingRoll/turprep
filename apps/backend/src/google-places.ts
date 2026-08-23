@@ -1,8 +1,11 @@
 import { z } from "zod"
 import {
   GooglePlaceDetailsSchema,
+  GooglePlaceSuggestionsSchema,
   isAllowedGoogleMapsUrl,
   type GooglePlaceDetails,
+  type GooglePlaceSuggestion,
+  type GooglePlaceSuggestionsInput,
 } from "@turprep/models"
 import { PRODUCT_USER_AGENT } from "./brand.js"
 
@@ -427,6 +430,246 @@ export function createGooglePlacesResolver(
     return place
   }
 }
+
+// ─── Suggestion helper ───────────────────────────────────────────────────────
+
+const placeSuggestionResultSchema = z.object({
+  id: z.string().min(1),
+  displayName: z.object({ text: z.string().min(1) }),
+  formattedAddress: z.string().nullable().optional(),
+  location: z
+    .object({ latitude: z.number(), longitude: z.number() })
+    .nullable()
+    .optional(),
+  primaryTypeDisplayName: z.object({ text: z.string().min(1) }).nullable().optional(),
+  priceLevel: z.string().nullable().optional(),
+  rating: z.number().min(0).max(5).nullable().optional(),
+  userRatingCount: z.number().int().nonnegative().nullable().optional(),
+  photos: z.object({ name: z.string().min(1) }).array().nullable().optional(),
+})
+
+const placeSuggestionSearchResponseSchema = z.object({
+  places: placeSuggestionResultSchema.array().optional().default([]),
+})
+
+type SuggestionResult = z.infer<typeof placeSuggestionResultSchema>
+
+const SUGGESTION_SEARCH_FIELD_MASK = [
+  "places.id",
+  "places.displayName",
+  "places.formattedAddress",
+  "places.location",
+  "places.primaryTypeDisplayName",
+  "places.priceLevel",
+  "places.rating",
+  "places.userRatingCount",
+  "places.photos",
+].join(",")
+
+const SUGGESTION_MAX_RESULTS = 10
+const SUGGESTION_RADIUS_METERS = 10_000
+const SUGGESTION_MAX_RETURN = 5
+
+/**
+ * Maps catalog optionIds to English search keywords appended to the base query.
+ * "local" appears in both activity-mood and meal-style intentionally.
+ */
+const SUGGESTION_OPTION_KEYWORDS: Record<string, string> = {
+  // activity-kind
+  culture: "museum art gallery cultural",
+  nature: "park nature trail",
+  active: "sports activity outdoor",
+  shopping: "shopping market boutique",
+  family: "family attraction zoo",
+  // activity-mood
+  calm: "peaceful",
+  social: "social",
+  local: "local traditional",
+  memorable: "landmark",
+  "weather-proof": "indoor",
+  // activity-effort
+  short: "quick",
+  easy: "easy",
+  moderate: "",
+  adventurous: "adventure",
+  // meal-occasion
+  breakfast: "breakfast brunch",
+  lunch: "lunch",
+  dinner: "dinner",
+  coffee: "cafe coffee",
+  sweet: "bakery dessert",
+  // meal-style
+  international: "international",
+  vegetarian: "vegetarian vegan",
+  casual: "casual bistro",
+  special: "fine dining gourmet",
+  // meal-mood
+  quiet: "quiet",
+  lively: "lively",
+  scenic: "scenic view",
+  quick: "fast food",
+  cozy: "cozy",
+}
+
+const ITEM_TYPE_BASE_QUERY: Record<string, string> = {
+  activity: "attraction sightseeing",
+  meal: "restaurant food",
+}
+
+/** Builds one text query per answer, ordered oldest-to-newest (recency ascending). */
+export function buildSuggestionQueries(
+  itemType: string,
+  answers: { questionId: string; optionId: string }[],
+): string[] {
+  const base = ITEM_TYPE_BASE_QUERY[itemType] ?? itemType
+  if (answers.length === 0) {
+    return [base]
+  }
+  return answers.map((answer) => {
+    const keyword = SUGGESTION_OPTION_KEYWORDS[answer.optionId] ?? ""
+    return [base, keyword].filter(Boolean).join(" ")
+  })
+}
+
+function haversineDistanceMeters(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number {
+  const R = 6_371_000
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLon = toRad(lon2 - lon1)
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(a))
+}
+
+async function fetchSuggestionResults(
+  apiKey: string,
+  textQuery: string,
+  latitude: number,
+  longitude: number,
+): Promise<SuggestionResult[]> {
+  let response: Response
+  try {
+    response = await fetch("https://places.googleapis.com/v1/places:searchText", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask": SUGGESTION_SEARCH_FIELD_MASK,
+      },
+      body: JSON.stringify({
+        languageCode: "nb",
+        textQuery,
+        maxResultCount: SUGGESTION_MAX_RESULTS,
+        locationRestriction: {
+          circle: {
+            center: { latitude, longitude },
+            radius: SUGGESTION_RADIUS_METERS,
+          },
+        },
+      }),
+    })
+  } catch {
+    return []
+  }
+
+  if (!response.ok) {
+    return []
+  }
+
+  let body: unknown
+  try {
+    body = await response.json()
+  } catch {
+    return []
+  }
+
+  const parsed = placeSuggestionSearchResponseSchema.safeParse(body)
+  return parsed.success ? parsed.data.places : []
+}
+
+export type GooglePlacesSuggestionsResolver = (
+  input: GooglePlaceSuggestionsInput,
+) => Promise<GooglePlaceSuggestion[]>
+
+export function createGooglePlacesSuggestionsResolver(
+  apiKey = process.env.GOOGLE_PLACES_API_KEY,
+): GooglePlacesSuggestionsResolver {
+  return async (input) => {
+    if (!apiKey) {
+      throw new GooglePlacesError("Google Places is not configured", 503)
+    }
+
+    const { latitude, longitude, itemType, answers, excludedPlaceIds } = input
+    const excludedSet = new Set(excludedPlaceIds)
+
+    // One query per answer. Index 0 = oldest answer (weight 1), last = most recent (highest weight).
+    const queries = buildSuggestionQueries(itemType, answers)
+
+    const allResults = await Promise.all(
+      queries.map((query) => fetchSuggestionResults(apiKey, query, latitude, longitude)),
+    )
+
+    // Score and deduplicate across queries.
+    // More-recent answers get higher weight; position in API response adds position score.
+    const scored = new Map<string, { place: SuggestionResult; score: number }>()
+
+    for (let qi = 0; qi < allResults.length; qi++) {
+      const weight = qi + 1 // weight increases with answer recency
+      const results = allResults[qi]
+
+      for (let pos = 0; pos < results.length; pos++) {
+        const place = results[pos]
+        if (excludedSet.has(place.id)) continue
+
+        const positionScore = (SUGGESTION_MAX_RESULTS - pos) / SUGGESTION_MAX_RESULTS
+        const ratingScore =
+          ((place.rating ?? 0) * Math.log10((place.userRatingCount ?? 0) + 10)) / 5
+
+        const existing = scored.get(place.id)
+        if (existing) {
+          // Accumulate recency + position score; don't double-count rating
+          existing.score += weight * positionScore
+        } else {
+          scored.set(place.id, { place, score: weight * positionScore + ratingScore })
+        }
+      }
+    }
+
+    const sorted = Array.from(scored.values())
+      .sort((a, b) => b.score - a.score)
+      .slice(0, SUGGESTION_MAX_RETURN)
+
+    const suggestions: GooglePlaceSuggestion[] = sorted.map(({ place }) => {
+      const placeLat = place.location?.latitude ?? latitude
+      const placeLon = place.location?.longitude ?? longitude
+
+      return {
+        placeId: place.id,
+        name: place.displayName.text,
+        address: place.formattedAddress ?? "",
+        latitude: placeLat,
+        longitude: placeLon,
+        category: place.primaryTypeDisplayName?.text ?? null,
+        priceLevel: place.priceLevel ?? null,
+        rating: place.rating ?? null,
+        userRatingCount: place.userRatingCount ?? null,
+        googleMapsUrl: `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(place.id)}`,
+        photoName: place.photos?.[0]?.name ?? null,
+        distanceMeters: Math.round(haversineDistanceMeters(latitude, longitude, placeLat, placeLon)),
+      }
+    })
+
+    return GooglePlaceSuggestionsSchema.parse(suggestions)
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 const googlePlacePhotoNamePattern = /^places\/[A-Za-z0-9_-]+\/photos\/[A-Za-z0-9_-]+$/
 

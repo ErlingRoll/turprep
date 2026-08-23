@@ -20,7 +20,7 @@ import type {
 } from "@turprep/models"
 import type { AuthService } from "./auth.js"
 import { createApp } from "./app.js"
-import { createGooglePlacesResolver, type GooglePlacesResolver } from "./google-places.js"
+import { createGooglePlacesResolver, type GooglePlacesResolver, type GooglePlacesSuggestionsResolver } from "./google-places.js"
 import { CurrencyRemovalError, type TripRepository } from "./trip-repository.js"
 
 const testTrip: Trip = {
@@ -127,6 +127,7 @@ function createTestApp(
   googlePlacesResolver?: GooglePlacesResolver,
   tripDetail = testTripDetail,
   repositoryOverrides: Partial<TripRepository> = {},
+  googlePlacesSuggestionsResolver?: GooglePlacesSuggestionsResolver,
 ) {
   const authService: AuthService = {
     authenticate: async (accessToken) =>
@@ -266,6 +267,7 @@ function createTestApp(
     authService,
     tripRepository: { ...tripRepository, ...repositoryOverrides },
     googlePlacesResolver,
+    googlePlacesSuggestionsResolver,
   })
 }
 
@@ -1357,6 +1359,82 @@ test("backup day items can be reordered without a date", async () => {
   assert.equal(response.status, 200)
   assert.equal(response.body.activities[0].id, "backup-activity")
   assert.equal(response.body.activities[0].tripDate, null)
+})
+
+// ─── /api/google-places/suggestions ──────────────────────────────────────────
+
+const validSuggestionsInput = {
+  latitude: 59.9139,
+  longitude: 10.7522,
+  itemType: "activity",
+  answers: [{ questionId: "activity-kind", optionId: "culture" }],
+  excludedPlaceIds: [],
+}
+
+const mockSuggestion = {
+  placeId: "place-1",
+  name: "Oslo Museum",
+  address: "Oslo, Norway",
+  latitude: 59.914,
+  longitude: 10.753,
+  category: "Museum",
+  priceLevel: null,
+  rating: 4.5,
+  userRatingCount: 200,
+  googleMapsUrl: "https://www.google.com/maps/place/?q=place_id:place-1",
+  photoName: "places/place-1/photos/photo1",
+  distanceMeters: 100,
+}
+
+const TEST_BEARER_TOKEN = ["Bearer", "valid-token"].join(" ")
+
+test("suggestions endpoint requires authentication", async () => {
+  const response = await request(createTestApp())
+    .post("/api/google-places/suggestions")
+    .send(validSuggestionsInput)
+
+  assert.equal(response.status, 401)
+})
+
+test("suggestions endpoint rejects invalid input", async () => {
+  const response = await request(createTestApp())
+    .post("/api/google-places/suggestions")
+    .set("Authorization", TEST_BEARER_TOKEN)
+    .send({ itemType: "invalid", latitude: "not-a-number" })
+
+  assert.equal(response.status, 400)
+  assert.ok(response.body.issues)
+})
+
+test("suggestions endpoint returns place suggestions", async () => {
+  const suggestionsResolver: GooglePlacesSuggestionsResolver = async () => [mockSuggestion]
+
+  const response = await request(
+    createTestApp(undefined, testTripDetail, {}, suggestionsResolver),
+  )
+    .post("/api/google-places/suggestions")
+    .set("Authorization", TEST_BEARER_TOKEN)
+    .send(validSuggestionsInput)
+
+  assert.equal(response.status, 200)
+  assert.equal(response.body.length, 1)
+  assert.equal(response.body[0].placeId, "place-1")
+  assert.equal(response.body[0].name, "Oslo Museum")
+  assert.equal(response.body[0].distanceMeters, 100)
+})
+
+test("suggestions endpoint returns empty array when resolver returns no results", async () => {
+  const suggestionsResolver: GooglePlacesSuggestionsResolver = async () => []
+
+  const response = await request(
+    createTestApp(undefined, testTripDetail, {}, suggestionsResolver),
+  )
+    .post("/api/google-places/suggestions")
+    .set("Authorization", TEST_BEARER_TOKEN)
+    .send(validSuggestionsInput)
+
+  assert.equal(response.status, 200)
+  assert.deepEqual(response.body, [])
 })
 
 test("day item reorder rejects timed items in reverse order", async () => {

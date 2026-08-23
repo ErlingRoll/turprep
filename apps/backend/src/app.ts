@@ -13,6 +13,8 @@ import {
   CreateTripInputSchema,
   GooglePlaceDetailsInputSchema,
   GooglePlaceDetailsSchema,
+  GooglePlaceSuggestionsInputSchema,
+  GooglePlaceSuggestionsSchema,
   InviteTripMemberInputSchema,
   HousingStaySchema,
   MealSchema,
@@ -55,9 +57,11 @@ import {
 import {
   createGooglePlacesResolver,
   createGooglePlacesPhotoResolver,
+  createGooglePlacesSuggestionsResolver,
   GooglePlacesError,
   type GooglePlacesPhotoResolver,
   type GooglePlacesResolver,
+  type GooglePlacesSuggestionsResolver,
 } from "./google-places.js"
 import { createSharingEmailSender, type SharingEmailSender } from "./sharing-email.js"
 import { PRODUCT_NAME } from "./brand.js"
@@ -72,6 +76,7 @@ export type AppDependencies = {
   tripRepository?: TripRepository
   googlePlacesResolver?: GooglePlacesResolver
   googlePlacesPhotoResolver?: GooglePlacesPhotoResolver
+  googlePlacesSuggestionsResolver?: GooglePlacesSuggestionsResolver
   sharingEmailSender?: SharingEmailSender
 }
 
@@ -157,6 +162,8 @@ export function createApp(dependencies: AppDependencies = {}) {
   const googlePlacesResolver = dependencies.googlePlacesResolver ?? createGooglePlacesResolver()
   const googlePlacesPhotoResolver =
     dependencies.googlePlacesPhotoResolver ?? createGooglePlacesPhotoResolver()
+  const googlePlacesSuggestionsResolver =
+    dependencies.googlePlacesSuggestionsResolver ?? createGooglePlacesSuggestionsResolver()
   const sharingEmailSender = dependencies.sharingEmailSender ?? createSharingEmailSender()
   const allowedOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:3000")
     .split(",")
@@ -214,6 +221,33 @@ export function createApp(dependencies: AppDependencies = {}) {
 
         const photo = await googlePlacesPhotoResolver(photoName)
         response.type(photo.contentType).send(photo.body)
+      } catch (error) {
+        if (error instanceof GooglePlacesError) {
+          response.status(error.statusCode).json({ message: error.message })
+          return
+        }
+        next(error)
+      }
+    },
+  )
+
+  app.post(
+    "/api/google-places/suggestions",
+    (request, response, next) => requireAuthenticatedUser(authService, request, response, next),
+    async (request: Request, response: Response, next: NextFunction) => {
+      try {
+        const parsedInput = GooglePlaceSuggestionsInputSchema.safeParse(request.body)
+
+        if (!parsedInput.success) {
+          response.status(400).json({
+            message: "Invalid suggestions input",
+            issues: parsedInput.error.issues,
+          })
+          return
+        }
+
+        const suggestions = await googlePlacesSuggestionsResolver(parsedInput.data)
+        response.json(GooglePlaceSuggestionsSchema.parse(suggestions))
       } catch (error) {
         if (error instanceof GooglePlacesError) {
           response.status(error.statusCode).json({ message: error.message })
