@@ -1,6 +1,7 @@
 {
   "name": "Turprep",
   "short_name": "Turprep",
+  "description": "Planlegg aktiviteter, måltider og overnatting på ett sted.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f9f5ed",

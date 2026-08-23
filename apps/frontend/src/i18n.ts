@@ -36,6 +36,12 @@ const resources = {
         openOptions: "Åpne språk- og temainnstillinger",
         tagline: "Din reise begynner her",
       },
+      seo: {
+        description:
+          "Planlegg aktiviteter, måltider og overnatting på ett sted. Turprep gjør det enklere å planlegge reisen sammen.",
+        privateTitle: "Turprep – din private reiseplan",
+        title: "Turprep – planlegg reisen din",
+      },
       dashboard: {
         backToTrips: "Tilbake til reiseoversikten",
         closeNewTrip: "Lukk",
@@ -413,6 +419,12 @@ const resources = {
         rememberMe: "Remember me on this device",
         openOptions: "Open language and theme settings",
         tagline: "Your journey starts here",
+      },
+      seo: {
+        description:
+          "Plan activities, meals, and accommodation in one place. Turprep makes planning your trip together easier.",
+        privateTitle: "Turprep – your private trip plan",
+        title: "Turprep – plan your trip",
       },
       dashboard: {
         backToTrips: "Back to trip overview",

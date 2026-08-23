@@ -5,6 +5,7 @@ import { getErrorMessage } from "../../lib/errors"
 import { LanguageSwitcher } from "../../components/LanguageSwitcher"
 import { MobileMenuButton } from "../../components/MobileMenuButton"
 import { ThemeToggle } from "../../components/ThemeToggle"
+import { TurprepLogo } from "../../components/TurprepLogo"
 import { PRODUCT_NAME } from "../../lib/brand"
 
 function getAuthRedirectUrl() {
@@ -53,9 +54,7 @@ export function LoginScreen() {
         <div className="mb-8 font-semibold tracking-tight text-brand sm:mb-12">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <span className="grid size-10 place-items-center rounded-xl bg-brand-surface text-lg text-on-brand">
-                ✦
-              </span>
+              <TurprepLogo className="size-10" />
               <span>{PRODUCT_NAME}</span>
             </div>
             <div className="hidden items-center gap-2 sm:flex">

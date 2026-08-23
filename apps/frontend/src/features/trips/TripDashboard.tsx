@@ -19,6 +19,7 @@ import { useTripPresence } from "./useTripPresence"
 import { LanguageSwitcher } from "../../components/LanguageSwitcher"
 import { MobileMenuButton } from "../../components/MobileMenuButton"
 import { ThemeToggle } from "../../components/ThemeToggle"
+import { TurprepLogo } from "../../components/TurprepLogo"
 import { PRODUCT_NAME, storageKeys } from "../../lib/brand"
 
 type TripDashboardProps = {
@@ -260,9 +261,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
       />
       <nav className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5 sm:px-8 lg:hidden">
         <Link className="flex items-center gap-3 font-semibold tracking-tight text-brand" to="/">
-          <span className="grid size-9 place-items-center rounded-xl bg-brand-surface text-lg text-on-brand">
-            ✦
-          </span>
+          <TurprepLogo />
           <span>{PRODUCT_NAME}</span>
         </Link>
         <div className="flex items-center gap-2">

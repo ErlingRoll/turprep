@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /trips/
+
+Sitemap: https://turprep.com/sitemap.xml

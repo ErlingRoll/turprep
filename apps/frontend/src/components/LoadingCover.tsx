@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next"
+import { TurprepLogo } from "./TurprepLogo"
 import { PRODUCT_NAME } from "../lib/brand"
 
 type LoadingCoverProps = {
@@ -35,12 +36,7 @@ export function LoadingCover({ fullScreen = false, message }: LoadingCoverProps)
             aria-hidden="true"
             className="absolute inset-3 animate-pulse rounded-full bg-surface-muted"
           />
-          <span
-            aria-hidden="true"
-            className="relative grid size-12 place-items-center rounded-2xl bg-brand-surface text-2xl text-on-brand shadow-lg"
-          >
-            ✦
-          </span>
+          <TurprepLogo className="relative size-12 rounded-2xl shadow-lg" />
         </div>
         <p className="mt-7 text-xs font-bold uppercase tracking-[0.24em] text-accent-text">
           {PRODUCT_NAME}

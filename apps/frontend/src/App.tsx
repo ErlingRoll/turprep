@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next"
 import { getErrorMessage } from "./lib/errors"
 import { getSupabaseClient } from "./lib/supabase"
 import { LoadingCover } from "./components/LoadingCover"
+import { SeoMetadata } from "./components/SeoMetadata"
 import { LoginScreen } from "./features/auth/LoginScreen"
 import { TripAccessRequestScreen } from "./features/trips/TripAccessRequestScreen"
 import { TripDashboard } from "./features/trips/TripDashboard"
@@ -91,18 +92,21 @@ export default function App() {
   }
 
   return (
-    <Routes>
-      <Route
-        element={<TripAccessRequestScreen accessToken={session.access_token} />}
-        path="/trips/:tripId/request-access"
-      />
-      <Route element={<TripDashboard session={session} />} path="/" />
-      <Route element={<TripDashboard session={session} />} path="/trips/:tripId" />
-      <Route element={<TripDashboard session={session} />} path="/trips/:tripId/travel" />
-      <Route element={<TripDashboard session={session} />} path="/trips/:tripId/backup" />
-      <Route element={<TripDashboard session={session} />} path="/trips/:tripId/map" />
-      <Route element={<LegacySpreadsheetRedirect />} path="/trips/:tripId/spreadsheet" />
-      <Route element={<Navigate replace to="/" />} path="*" />
-    </Routes>
+    <>
+      <SeoMetadata />
+      <Routes>
+        <Route
+          element={<TripAccessRequestScreen accessToken={session.access_token} />}
+          path="/trips/:tripId/request-access"
+        />
+        <Route element={<TripDashboard session={session} />} path="/" />
+        <Route element={<TripDashboard session={session} />} path="/trips/:tripId" />
+        <Route element={<TripDashboard session={session} />} path="/trips/:tripId/travel" />
+        <Route element={<TripDashboard session={session} />} path="/trips/:tripId/backup" />
+        <Route element={<TripDashboard session={session} />} path="/trips/:tripId/map" />
+        <Route element={<LegacySpreadsheetRedirect />} path="/trips/:tripId/spreadsheet" />
+        <Route element={<Navigate replace to="/" />} path="*" />
+      </Routes>
+    </>
   )
 }

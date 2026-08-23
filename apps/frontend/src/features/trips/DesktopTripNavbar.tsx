@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 import { LanguageSwitcher } from "../../components/LanguageSwitcher"
 import { ThemeToggle } from "../../components/ThemeToggle"
+import { TurprepLogo } from "../../components/TurprepLogo"
 import { PRODUCT_NAME } from "../../lib/brand"
 import { TripPresenceIndicator } from "./TripPresenceIndicator"
 import type { TripPresenceViewer } from "./useTripPresence"
@@ -33,9 +34,7 @@ export function DesktopTripNavbar({
       <div className="mx-auto max-w-7xl px-8 py-3">
         <div className="flex items-center gap-5">
           <Link className="flex shrink-0 items-center gap-3 font-semibold tracking-tight text-brand" to="/">
-            <span className="grid size-9 place-items-center rounded-xl bg-brand-surface text-lg text-on-brand">
-              ✦
-            </span>
+            <TurprepLogo />
             <span>{PRODUCT_NAME}</span>
           </Link>
 
