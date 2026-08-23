@@ -232,8 +232,7 @@ const resources = {
         tripDatesInvalid: "Sluttdatoen må være på eller etter startdatoen.",
       },
       tripPresence: {
-        active: "Ser nå",
-        viewerFallback: "En deltaker",
+        label: "Deltakere som ser på reisen",
       },
       tripDetails: {
         activity: "Aktivitet",
@@ -610,8 +609,7 @@ const resources = {
         tripDatesInvalid: "The end date must be on or after the start date.",
       },
       tripPresence: {
-        active: "Viewing now",
-        viewerFallback: "A participant",
+        label: "Members viewing this trip",
       },
       tripDetails: {
         activity: "activity",

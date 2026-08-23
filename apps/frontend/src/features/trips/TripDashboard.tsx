@@ -58,7 +58,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
   const isPlanMode = !isTravelMode && !isBackupMode && !isMapMode
   const hasValidTripId = Boolean(tripId && tripId !== ":tripId")
   const isDesktop = useIsDesktop()
-  const presenceViewers = useTripPresence(hasValidTripId ? tripId : undefined)
+  const presenceViewers = useTripPresence(hasValidTripId ? tripId : undefined, session.access_token)
   const [trips, setTrips] = useState<Trip[]>([])
   const [selectedTrip, setSelectedTrip] = useState<TripDetail | null>(null)
   const [search, setSearch] = useState("")

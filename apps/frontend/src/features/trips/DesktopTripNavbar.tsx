@@ -29,7 +29,7 @@ export function DesktopTripNavbar({
   const tripBasePath = tripId ? `/trips/${tripId}` : null
 
   return (
-    <nav className="hidden border-b border-border bg-surface/90 shadow-sm backdrop-blur lg:block">
+    <nav className="sticky top-0 z-40 hidden border-b border-border bg-surface/90 shadow-sm backdrop-blur lg:block">
       <div className="mx-auto max-w-7xl px-8 py-3">
         <div className="flex items-center gap-5">
           <Link className="flex shrink-0 items-center gap-3 font-semibold tracking-tight text-brand" to="/">

@@ -1,10 +1,54 @@
 import { useTranslation } from "react-i18next"
+import { useState } from "react"
 import type { TripPresenceViewer } from "./useTripPresence"
 
 type TripPresenceIndicatorProps = {
   viewers: TripPresenceViewer[]
   tone?: "brand" | "surface"
   className?: string
+}
+
+function getViewerInitials(label: string) {
+  const initials = label
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase()
+
+  return initials || "?"
+}
+
+function ViewerAvatar({
+  avatarClassName,
+  viewer,
+}: {
+  avatarClassName: string
+  viewer: TripPresenceViewer
+}) {
+  const [hasImageError, setHasImageError] = useState(false)
+
+  return (
+    <span
+      aria-label={viewer.label}
+      className={`relative grid size-8 shrink-0 place-items-center overflow-hidden rounded-full text-[0.65rem] font-bold outline-none ${avatarClassName}`}
+      role="img"
+      tabIndex={0}
+      title={viewer.label}
+    >
+      {getViewerInitials(viewer.label)}
+      {viewer.avatarUrl && !hasImageError && (
+        <img
+          alt=""
+          className="absolute inset-0 size-full object-cover"
+          onError={() => setHasImageError(true)}
+          src={viewer.avatarUrl}
+        />
+      )}
+    </span>
+  )
 }
 
 export function TripPresenceIndicator({
@@ -18,40 +62,28 @@ export function TripPresenceIndicator({
     return null
   }
 
-  const visibleViewers = viewers.slice(0, 3)
-  const hiddenCount = viewers.length - visibleViewers.length
-  const containerClassName =
+  const avatarClassName =
     tone === "brand"
-      ? "border-white/15 bg-white/10 text-on-brand"
-      : "border-border bg-surface-soft text-on-surface"
-  const badgeClassName =
-    tone === "brand" ? "bg-white/15 text-on-brand" : "bg-surface text-on-surface"
-  const dotClassName = "bg-success"
+      ? "bg-white/15 text-on-brand ring-2 ring-brand-surface"
+      : "bg-surface-muted text-brand ring-2 ring-surface"
 
   return (
-    <div className={`flex flex-wrap items-center gap-2 ${className}`}>
-      <span
-        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${containerClassName}`}
-      >
-        <span className={`size-2 rounded-full ${dotClassName}`} />
-        {t("tripPresence.active")}
-      </span>
-      <div className="flex flex-wrap gap-2">
-        {visibleViewers.map((viewer) => (
+    <div
+      aria-label={t("tripPresence.label")}
+      className={`flex items-center gap-1 ${className}`}
+      role="group"
+    >
+      {viewers.map((viewer) => (
+        <span className="group relative" key={viewer.userId}>
+          <ViewerAvatar avatarClassName={avatarClassName} viewer={viewer} />
           <span
-            className={`max-w-44 truncate rounded-full px-3 py-1 text-xs font-medium ${badgeClassName}`}
-            key={viewer.userId}
-            title={viewer.label}
+            className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-brand-surface px-2.5 py-1.5 text-xs font-medium text-on-brand opacity-0 shadow-popover transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+            role="tooltip"
           >
-            {viewer.label || t("tripPresence.viewerFallback")}
+            {viewer.label}
           </span>
-        ))}
-        {hiddenCount > 0 && (
-          <span className={`rounded-full px-3 py-1 text-xs font-medium ${badgeClassName}`}>
-            +{hiddenCount}
-          </span>
-        )}
-      </div>
+        </span>
+      ))}
     </div>
   )
 }
