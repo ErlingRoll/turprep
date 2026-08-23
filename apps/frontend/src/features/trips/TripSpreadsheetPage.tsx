@@ -1578,11 +1578,6 @@ export function TripSpreadsheetPage({
                           const activeField = editingFieldKey?.startsWith(`${itemKey}:`)
                             ? (editingFieldKey.slice(itemKey.length + 1) as EditableField)
                             : null
-                          const defaultEndTimeForStart =
-                            activeField === "startTime" && draft && !draft.endTime
-                              ? getDefaultEndTimeForStart(rows, draft.startTime, itemKey)
-                              : null
-
                           return (
                             <SpreadsheetItineraryRow
                               key={itemKey}
@@ -1618,7 +1613,6 @@ export function TripSpreadsheetPage({
                               onDragOver={handleSpreadsheetDragOver}
                               onDragEnd={handleSpreadsheetDragEnd}
                               onDrop={handleSpreadsheetDrop}
-                              defaultEndTimeForStart={defaultEndTimeForStart}
                             />
                           )
                         })

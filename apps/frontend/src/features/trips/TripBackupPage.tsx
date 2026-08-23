@@ -1485,13 +1485,8 @@ export function TripBackupPage({
                                 const activeField = desktopEditingFieldKey?.startsWith(`${key}:`)
                                   ? (desktopEditingFieldKey.slice(key.length + 1) as EditableField)
                                   : null
-                                  const defaultEndTimeForStart =
-                                    activeField === "startTime" && desktopDraft && !desktopDraft.endTime
-                                      ? getDefaultEndTimeForStart(group.rows, desktopDraft.startTime, key)
-                                      : null
-
-                                  return (
-                                    <SpreadsheetItineraryRow
+                                return (
+                                  <SpreadsheetItineraryRow
                                     key={key}
                                     activeField={activeField}
                                     dateLabel={displayedDate}
@@ -1508,7 +1503,6 @@ export function TripBackupPage({
                                     onDragOver={handleDesktopDragOver}
                                     onDragStart={handleDesktopDragStart}
                                     onDrop={handleDesktopDrop}
-                                    defaultEndTimeForStart={defaultEndTimeForStart}
                                     onMoveToBackup={(rowType, rowItem) => {
                                       void moveToPlan({ item: rowItem, type: rowType })
                                     }}

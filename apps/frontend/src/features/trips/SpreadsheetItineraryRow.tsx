@@ -69,7 +69,6 @@ type SpreadsheetItineraryRowProps = {
   onDragOver: (event: DragEvent<HTMLTableRowElement>, dayDate: string) => void
   onDragEnd: () => void
   onDrop: (event: DragEvent<HTMLTableRowElement>) => Promise<void>
-  defaultEndTimeForStart?: string | null
 }
 
 export function SpreadsheetItineraryRow({
@@ -103,7 +102,6 @@ export function SpreadsheetItineraryRow({
   onDragOver,
   onDragEnd,
   onDrop,
-  defaultEndTimeForStart,
 }: SpreadsheetItineraryRowProps) {
   const { t } = useTranslation()
   const innerColumnCount = 5 + (showPrice ? 2 : 0) + (showWebsite ? 1 : 0)
@@ -145,10 +143,7 @@ export function SpreadsheetItineraryRow({
       return
     }
 
-    let nextDraft = update(draft)
-    if (field === "startTime" && nextDraft.startTime && !nextDraft.endTime && defaultEndTimeForStart) {
-      nextDraft = { ...nextDraft, endTime: defaultEndTimeForStart }
-    }
+    const nextDraft = update(draft)
 
     onUpdateDraft(nextDraft)
     void onSaveField(type, item, field, nextDraft)
