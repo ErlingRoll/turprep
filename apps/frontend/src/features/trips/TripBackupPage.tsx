@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from "react"
+import { Fragment, useRef, useState, type DragEvent, type FormEvent } from "react"
+import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
 import {
   createActivity,
@@ -26,11 +27,28 @@ import { TripItemPreference } from "../../components/TripItemPreference"
 import type { ItemDetailValues } from "../../components/ItemDetails"
 import { getErrorMessage, isGoogleMapsError } from "../../lib/errors"
 import { getDefaultCurrency } from "../../lib/currency"
-import { formatActivityTime, getDayItemTitle, sortActivities } from "../../lib/activity-format"
+import { formatActivityTime, getDayItemTitle, sortActivities, sortDayItems } from "../../lib/activity-format"
 import { formatDate } from "../../lib/date-format"
 import { shiftDate } from "../../lib/trip-dates"
 import { MobileDayPager } from "./MobileDayPager"
+import { SpreadsheetHeaderCell } from "./SpreadsheetCell"
+import {
+  getDraggedItemKey,
+  getItineraryRowKey,
+  getNearestSpreadsheetDropTarget,
+  isDragBlockedTarget,
+  setSpreadsheetDragData,
+} from "./spreadsheet-drag"
+import { getSpreadsheetItemDraft } from "./spreadsheet-item-draft"
+import { SpreadsheetItineraryRow } from "./SpreadsheetItineraryRow"
 import { TripDayNavigator } from "./TripDayNavigator"
+import type {
+  EditableField,
+  ItemDraft,
+  ItineraryRow,
+  SpreadsheetDraggedItem,
+  SpreadsheetDropTarget,
+} from "./spreadsheet-types"
 import type { TripDaySelection } from "./useTripDaySelection"
 import {
   isAllowedGoogleMapsUrl,
@@ -41,6 +59,9 @@ import {
 type BackupType = "activity" | "meal" | "housing"
 type BackupItem = Activity | Meal | HousingStay
 type BackupEntry = { type: BackupType; item: BackupItem }
+type BackupPlannerType = "activity" | "meal"
+type BackupPlannerRow = ItineraryRow
+type DesktopBackupGroup = { id: string; label: string; rows: BackupPlannerRow[]; date: string | null }
 
 type TripBackupPageProps = {
   accessToken: string
@@ -83,6 +104,14 @@ export function TripBackupPage({
   const [pendingDeletion, setPendingDeletion] = useState<BackupEntry | null>(null)
   const [savingPreferenceKey, setSavingPreferenceKey] = useState<string | null>(null)
   const [openMenuKey, setOpenMenuKey] = useState<string | null>(null)
+  const [creatingDesktopGroupId, setCreatingDesktopGroupId] = useState<string | null>(null)
+  const [desktopDraggedItem, setDesktopDraggedItem] = useState<SpreadsheetDraggedItem | null>(null)
+  const [desktopDropTarget, setDesktopDropTargetState] = useState<SpreadsheetDropTarget | null>(null)
+  const [desktopEditingFieldKey, setDesktopEditingFieldKey] = useState<string | null>(null)
+  const [desktopDraft, setDesktopDraft] = useState<ItemDraft | null>(null)
+  const [desktopSaveError, setDesktopSaveError] = useState<string | null>(null)
+  const desktopTableRef = useRef<HTMLTableElement>(null)
+  const desktopDropTargetRef = useRef<SpreadsheetDropTarget | null>(null)
 
   const allBackupActivities = trip.backupActivities
   const allBackupMeals = trip.meals.filter((meal) => meal.isBackup)
@@ -222,11 +251,22 @@ export function TripBackupPage({
     setNotes("")
     setFormError(null)
     setGoogleMapsError(null)
+    setCreatingDesktopGroupId(null)
+    setDesktopEditingFieldKey(null)
+    setDesktopDraft(null)
+    setDesktopSaveError(null)
   }
 
   function startCreate(type: BackupType) {
     resetForm()
     setFormType(type)
+  }
+
+  function startDesktopCreate(type: BackupPlannerType, group: DesktopBackupGroup) {
+    resetForm()
+    setFormType(type)
+    setTentativeDate(group.date ?? "")
+    setCreatingDesktopGroupId(group.id)
   }
 
   function startEdit(item: BackupItem, type: BackupType, shouldActivate = false) {
@@ -478,6 +518,99 @@ export function TripBackupPage({
           : await updateHousingStay(accessToken, trip.id, item.id, details)
 
     onTripUpdated(updateTripItem(trip, saved, type))
+  }
+
+  async function saveBackupItemGoogleMapsUrl(
+    type: BackupPlannerType,
+    item: Activity | Meal,
+    googleMapsUrl: string | null,
+  ): Promise<string | null> {
+    setIsSaving(true)
+    setFormError(null)
+    setGoogleMapsError(null)
+
+    try {
+      if (type === "meal") {
+        const savedMeal = await updateMeal(accessToken, trip.id, item.id, { googleMapsUrl })
+        onTripUpdated({
+          ...trip,
+          meals: trip.meals.map((currentMeal) => (currentMeal.id === savedMeal.id ? savedMeal : currentMeal)),
+        })
+      } else {
+        const savedActivity = await updateActivity(accessToken, trip.id, item.id, { googleMapsUrl })
+        onTripUpdated({
+          ...trip,
+          backupActivities: trip.backupActivities.map((activity) =>
+            activity.id === savedActivity.id ? savedActivity : activity,
+          ),
+        })
+      }
+
+      return null
+    } catch (reason: unknown) {
+      return getErrorMessage(reason)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  function startDesktopEditing(type: BackupPlannerType, item: Activity | Meal, field: EditableField) {
+    if (isSaving) {
+      return
+    }
+
+    setDesktopEditingFieldKey(`${type}:${item.id}:${field}`)
+    setDesktopDraft(getSpreadsheetItemDraft(item))
+    setDesktopSaveError(null)
+  }
+
+  function cancelDesktopEditing() {
+    if (isSaving) {
+      return
+    }
+
+    setDesktopEditingFieldKey(null)
+    setDesktopDraft(null)
+    setDesktopSaveError(null)
+  }
+
+  async function saveDesktopEditingField(
+    type: BackupPlannerType,
+    item: Activity | Meal,
+    field: EditableField,
+  ) {
+    if (!desktopDraft || desktopEditingFieldKey !== `${type}:${item.id}:${field}`) {
+      return
+    }
+
+    setIsSaving(true)
+    setDesktopSaveError(null)
+
+    const input =
+      field === "title"
+        ? { title: desktopDraft.title.trim() || null }
+        : field === "notes"
+          ? { notes: desktopDraft.notes.trim() || null }
+          : {
+              allDay: desktopDraft.allDay,
+              endTime: desktopDraft.allDay ? null : desktopDraft.endTime || null,
+              startTime: desktopDraft.allDay ? null : desktopDraft.startTime || null,
+            }
+
+    try {
+      const saved =
+        type === "meal"
+          ? await updateMeal(accessToken, trip.id, item.id, input)
+          : await updateActivity(accessToken, trip.id, item.id, input)
+
+      onTripUpdated(updateTripItem(trip, saved, type))
+      setDesktopEditingFieldKey(null)
+      setDesktopDraft(null)
+    } catch (reason: unknown) {
+      setDesktopSaveError(getErrorMessage(reason))
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   async function handleDelete({ item, type }: BackupEntry) {
@@ -789,6 +922,280 @@ export function TripBackupPage({
     )
   }
 
+  function sortBackupPlannerRows(rows: BackupPlannerRow[]) {
+    const typeByItemId = new Map(rows.map((row) => [row.item.id, row.type]))
+
+    return sortDayItems(rows.map((row) => row.item)).map((item) => ({
+      item,
+      type: typeByItemId.get(item.id) ?? "activity",
+    }))
+  }
+
+  const showPrice = showDetails && trip.itemDetailVisibility.showPrice
+  const showWebsite = showDetails && trip.itemDetailVisibility.showWebsite
+  const itineraryColumnCount = 5 + (showPrice ? 2 : 0) + (showWebsite ? 1 : 0)
+  const desktopBackupGroups: DesktopBackupGroup[] = (() => {
+    const datedRows = new Map<string, BackupPlannerRow[]>()
+    const undatedRows: BackupPlannerRow[] = []
+
+    for (const day of trip.days) {
+      datedRows.set(day.date, [])
+    }
+
+    for (const activity of backupActivities) {
+      const targetRows = activity.tripDate ? datedRows.get(activity.tripDate) : undefined
+      if (targetRows) {
+        targetRows.push({ item: activity, type: "activity" })
+      } else {
+        undatedRows.push({ item: activity, type: "activity" })
+      }
+    }
+
+    for (const meal of backupMeals) {
+      const targetRows = meal.tripDate ? datedRows.get(meal.tripDate) : undefined
+      if (targetRows) {
+        targetRows.push({ item: meal, type: "meal" })
+      } else {
+        undatedRows.push({ item: meal, type: "meal" })
+      }
+    }
+
+    const groups: DesktopBackupGroup[] = trip.days
+      .map((day) => ({
+        id: day.date,
+        label: formatDate(day.date),
+        rows: sortBackupPlannerRows(datedRows.get(day.date) ?? []),
+        date: day.date,
+      }))
+      .filter((group) => group.rows.length > 0)
+
+    if (undatedRows.length > 0) {
+      groups.push({
+        id: "undated",
+        label: t("backup.noTentativeDate"),
+        rows: sortBackupPlannerRows(undatedRows),
+        date: null,
+      })
+    }
+
+    return groups
+  })()
+  const desktopGroupById = new Map(desktopBackupGroups.map((group) => [group.id, group]))
+  const desktopDropLineBounds = desktopTableRef.current?.getBoundingClientRect()
+  const desktopDraggedItemKey = desktopDraggedItem ? getDraggedItemKey(desktopDraggedItem) : null
+  const desktopDraggedSourceRows = desktopDraggedItem
+    ? desktopGroupById.get(desktopDraggedItem.dayDate)?.rows ?? []
+    : []
+  const desktopDraggedSourceIndex = desktopDraggedItemKey
+    ? desktopDraggedSourceRows.findIndex((row) => getItineraryRowKey(row) === desktopDraggedItemKey)
+    : -1
+  const isDesktopDropLineSuppressed =
+    desktopDraggedSourceIndex >= 0 &&
+    desktopDropTarget?.dayDate === desktopDraggedItem?.dayDate &&
+    (desktopDropTarget?.index === desktopDraggedSourceIndex ||
+      desktopDropTarget?.index === desktopDraggedSourceIndex + 1)
+
+  function setDesktopDropTarget(nextTarget: SpreadsheetDropTarget | null) {
+    desktopDropTargetRef.current = nextTarget
+    setDesktopDropTargetState(nextTarget)
+  }
+
+  function getDesktopSourceGroupId(draggedKey: string) {
+    if (desktopDraggedItem) {
+      return desktopDraggedItem.dayDate
+    }
+
+    return desktopBackupGroups.find((group) =>
+      group.rows.some((row) => getItineraryRowKey(row) === draggedKey),
+    )?.id
+  }
+
+  function getOptimisticBackupTrip(
+    baseTrip: TripDetail,
+    rowsByGroupId: Map<string, BackupPlannerRow[]>,
+  ): TripDetail {
+    const activityUpdates = new Map<string, Activity>()
+    const mealUpdates = new Map<string, Meal>()
+
+    rowsByGroupId.forEach((rows, groupId) => {
+      const group = desktopGroupById.get(groupId)
+      if (!group) {
+        return
+      }
+
+      rows.forEach((row, sortOrder) => {
+        const update = {
+          ...row.item,
+          sortOrder,
+          tripDate: group.date,
+        }
+        if (row.type === "activity") {
+          activityUpdates.set(row.item.id, update as Activity)
+        } else {
+          mealUpdates.set(row.item.id, update as Meal)
+        }
+      })
+    })
+
+    return {
+      ...baseTrip,
+      backupActivities: baseTrip.backupActivities.map(
+        (activity) => activityUpdates.get(activity.id) ?? activity,
+      ),
+      meals: baseTrip.meals.map((meal) => (meal.isBackup ? mealUpdates.get(meal.id) ?? meal : meal)),
+    }
+  }
+
+  function handleDesktopDragStart(
+    event: DragEvent<HTMLTableRowElement>,
+    dayDate: string,
+    row: BackupPlannerRow,
+  ) {
+    if (isDragBlockedTarget(event.target) || isSaving) {
+      event.preventDefault()
+      return
+    }
+
+    setSpreadsheetDragData(
+      event,
+      getItineraryRowKey(row),
+      `${row.type === "activity" ? t("spreadsheet.activity") : t("spreadsheet.meal")} · ${getDayItemTitle(
+        row.item,
+        t("tripDetails.untitledItem"),
+      )}`,
+    )
+    setDesktopDraggedItem({
+      dayDate,
+      itemId: row.item.id,
+      itemType: row.type,
+    })
+  }
+
+  function handleDesktopDragOver(event: DragEvent<HTMLTableRowElement>, dayDate: string) {
+    if (!desktopDraggedItem) {
+      return
+    }
+
+    event.preventDefault()
+    event.dataTransfer.dropEffect = "move"
+    const nextDropTarget = getNearestSpreadsheetDropTarget(
+      desktopTableRef.current,
+      dayDate,
+      event.clientY,
+    )
+    const currentDropTarget = desktopDropTargetRef.current
+    if (
+      nextDropTarget &&
+      (currentDropTarget?.dayDate !== nextDropTarget.dayDate ||
+        currentDropTarget.index !== nextDropTarget.index ||
+        currentDropTarget.lineY !== nextDropTarget.lineY)
+    ) {
+      setDesktopDropTarget(nextDropTarget)
+    }
+  }
+
+  function handleDesktopDragEnd() {
+    setDesktopDraggedItem(null)
+    setDesktopDropTarget(null)
+  }
+
+  async function handleDesktopDrop(event: DragEvent<HTMLTableRowElement>) {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const selectedDropTarget = desktopDropTargetRef.current
+    const draggedKey = desktopDraggedItem
+      ? getDraggedItemKey(desktopDraggedItem)
+      : event.dataTransfer.getData("text/plain")
+    setDesktopDraggedItem(null)
+    setDesktopDropTarget(null)
+
+    if (!draggedKey || !selectedDropTarget || isSaving) {
+      return
+    }
+
+    const sourceGroupId = getDesktopSourceGroupId(draggedKey)
+    const targetGroupId = selectedDropTarget.dayDate
+
+    if (!sourceGroupId) {
+      return
+    }
+
+    const sourceRows = desktopGroupById.get(sourceGroupId)?.rows ?? []
+    const sourceIndex = sourceRows.findIndex((row) => getItineraryRowKey(row) === draggedKey)
+    const targetRows = desktopGroupById.get(targetGroupId)?.rows ?? []
+
+    if (sourceIndex < 0 || targetRows.length === 0) {
+      return
+    }
+
+    const isSameGroup = sourceGroupId === targetGroupId
+    const targetRowsWithoutDraggedItem = targetRows.filter(
+      (row) => getItineraryRowKey(row) !== draggedKey,
+    )
+    const adjustedTargetIndex =
+      isSameGroup && sourceIndex < selectedDropTarget.index
+        ? selectedDropTarget.index - 1
+        : selectedDropTarget.index
+    const insertionIndex = Math.max(
+      0,
+      Math.min(adjustedTargetIndex, targetRowsWithoutDraggedItem.length),
+    )
+    const movedRow = sourceRows[sourceIndex]
+    const nextTargetRows = [
+      ...targetRowsWithoutDraggedItem.slice(0, insertionIndex),
+      movedRow,
+      ...targetRowsWithoutDraggedItem.slice(insertionIndex),
+    ]
+
+    if (isSameGroup && insertionIndex === sourceIndex) {
+      return
+    }
+
+    const rowsByGroupId = new Map<string, BackupPlannerRow[]>()
+    if (isSameGroup) {
+      rowsByGroupId.set(sourceGroupId, nextTargetRows)
+    } else {
+      rowsByGroupId.set(
+        sourceGroupId,
+        sourceRows.filter((row) => getItineraryRowKey(row) !== draggedKey),
+      )
+      rowsByGroupId.set(targetGroupId, nextTargetRows)
+    }
+
+    const optimisticTrip = getOptimisticBackupTrip(trip, rowsByGroupId)
+    onTripUpdated(optimisticTrip)
+    setFormError(null)
+    setIsSaving(true)
+
+    try {
+      const saveRequests = Array.from(rowsByGroupId.entries()).flatMap(([groupId, rows]) => {
+        const group = desktopGroupById.get(groupId)
+        if (!group) {
+          return []
+        }
+
+        return rows.map((row, sortOrder) =>
+          row.type === "activity"
+            ? updateActivity(accessToken, trip.id, row.item.id, {
+                sortOrder,
+                tripDate: group.date,
+              })
+            : updateMeal(accessToken, trip.id, row.item.id, {
+                sortOrder,
+                tripDate: group.date,
+              }),
+        )
+      })
+      await Promise.all(saveRequests)
+    } catch (reason: unknown) {
+      onTripUpdated(trip)
+      setFormError(getErrorMessage(reason))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   const sections: Array<{ type: BackupType; label: string; items: BackupItem[] }> = [
     { type: "activity", label: t("tripDetails.activities"), items: backupActivities },
     { type: "meal", label: t("tripDetails.meals"), items: backupMeals },
@@ -833,11 +1240,11 @@ export function TripBackupPage({
             selectedDate={selectedDayDate}
           >
             <div>
-              {!editingId && renderForm()}
-              <div className="mt-5 grid gap-5 lg:grid-cols-3">
+              {!editingId && <div className="lg:hidden">{renderForm()}</div>}
+              <div className="mt-5 grid gap-5 lg:hidden">
                 {sections.map((section) => (
                   <section
-                    className={`${selectedType === section.type ? "block" : "hidden"} lg:block`}
+                    className={selectedType === section.type ? "block" : "hidden"}
                     key={section.type}
                   >
                     <div className="flex items-center justify-between gap-3">
@@ -861,6 +1268,183 @@ export function TripBackupPage({
                     )}
                   </section>
                 ))}
+              </div>
+              <div className="mt-5 hidden lg:block">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-accent-text">
+                      {t("spreadsheet.prototype")}
+                    </p>
+                    <h2 className="mt-1 text-2xl font-semibold text-brand">{t("spreadsheet.itinerary")}</h2>
+                    <p className="mt-2 text-sm text-muted">{t("backup.subtitle")}</p>
+                  </div>
+                </div>
+                <div className="relative mt-5 w-full overflow-x-auto">
+                  <div className="w-full min-w-0 rounded-2xl border border-border-card bg-surface">
+                    <table
+                      className="w-full min-w-[56rem] table-fixed border-collapse text-left"
+                      ref={desktopTableRef}
+                    >
+                      <colgroup>
+                        <col className="w-30" />
+                        <col className="w-56" />
+                        <col className="w-16" />
+                        <col className="w-16" />
+                        {showPrice && (
+                          <>
+                            <col className="w-16" />
+                            <col className="w-16" />
+                          </>
+                        )}
+                        {showWebsite && <col className="w-32" />}
+                        <col />
+                      </colgroup>
+                      <thead className="sticky top-0 z-10 text-xs font-semibold uppercase tracking-wide text-muted">
+                        <tr>
+                          <SpreadsheetHeaderCell>{t("spreadsheet.date")}</SpreadsheetHeaderCell>
+                          <SpreadsheetHeaderCell>{t("spreadsheet.title")}</SpreadsheetHeaderCell>
+                          <SpreadsheetHeaderCell>{t("spreadsheet.start")}</SpreadsheetHeaderCell>
+                          <SpreadsheetHeaderCell>{t("spreadsheet.end")}</SpreadsheetHeaderCell>
+                          {showPrice && (
+                            <>
+                              <SpreadsheetHeaderCell>{t("spreadsheet.price")}</SpreadsheetHeaderCell>
+                              <SpreadsheetHeaderCell>{t("spreadsheet.currency")}</SpreadsheetHeaderCell>
+                            </>
+                          )}
+                          {showWebsite && (
+                            <SpreadsheetHeaderCell>{t("spreadsheet.website")}</SpreadsheetHeaderCell>
+                          )}
+                          <SpreadsheetHeaderCell className="w-full">{null}</SpreadsheetHeaderCell>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {desktopBackupGroups.length === 0 ? (
+                          <tr>
+                            <td
+                              className="border-b border-border-divider px-3 py-4 text-sm text-muted"
+                              colSpan={itineraryColumnCount}
+                            >
+                              {t("backup.empty")}
+                            </td>
+                          </tr>
+                        ) : (
+                          desktopBackupGroups.map((group) => (
+                            <Fragment key={group.id}>
+                              <tr
+                                className="bg-page"
+                                onDragOver={(event) => handleDesktopDragOver(event, group.id)}
+                                onDrop={(event) => void handleDesktopDrop(event)}
+                              >
+                                <th
+                                  className="border-y border-border-divider px-3 py-2 text-left text-sm font-semibold text-brand"
+                                  colSpan={itineraryColumnCount}
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span>{group.label}</span>
+                                    <span className="flex flex-wrap gap-2 normal-case tracking-normal">
+                                      <button
+                                        className="rounded-lg border border-border px-2 py-1 text-xs font-semibold text-muted hover:border-brand hover:text-brand disabled:opacity-50"
+                                        disabled={isSaving}
+                                        onClick={() => startDesktopCreate("activity", group)}
+                                        type="button"
+                                      >
+                                        + {t("spreadsheet.addActivity")}
+                                      </button>
+                                      <button
+                                        className="rounded-lg border border-border px-2 py-1 text-xs font-semibold text-muted hover:border-brand hover:text-brand disabled:opacity-50"
+                                        disabled={isSaving}
+                                        onClick={() => startDesktopCreate("meal", group)}
+                                        type="button"
+                                      >
+                                        + {t("spreadsheet.addMeal")}
+                                      </button>
+                                    </span>
+                                  </div>
+                                </th>
+                              </tr>
+                              {!editingId &&
+                                formType !== "housing" &&
+                                creatingDesktopGroupId === group.id && (
+                                  <tr>
+                                    <td className="border-b border-border-divider p-3" colSpan={itineraryColumnCount}>
+                                      {renderForm()}
+                                    </td>
+                                  </tr>
+                                )}
+                              {group.rows.map(({ type, item }, itemIndex) => {
+                                const key = `${type}:${item.id}`
+                                const displayedDate = item.tripDate
+                                  ? formatDate(item.tripDate)
+                                  : t("backup.noTentativeDate")
+                                const activeField = desktopEditingFieldKey?.startsWith(`${key}:`)
+                                  ? (desktopEditingFieldKey.slice(key.length + 1) as EditableField)
+                                  : null
+
+                                return (
+                                  <SpreadsheetItineraryRow
+                                    key={key}
+                                    activeField={activeField}
+                                    dateLabel={displayedDate}
+                                    dayDate={group.id}
+                                    draft={desktopDraft}
+                                    isHousingEditing={false}
+                                    isSaving={isSaving}
+                                    item={item}
+                                    itemIndex={itemIndex}
+                                    itineraryColumnCount={itineraryColumnCount}
+                                    moveActionLabel={t("backup.moveToPlan")}
+                                    onCancelEditing={cancelDesktopEditing}
+                                    onDragEnd={handleDesktopDragEnd}
+                                    onDragOver={handleDesktopDragOver}
+                                    onDragStart={handleDesktopDragStart}
+                                    onDrop={handleDesktopDrop}
+                                    onMoveToBackup={(rowType, rowItem) => {
+                                      void moveToPlan({ item: rowItem, type: rowType })
+                                    }}
+                                    onPreferenceChange={(itemType, itemId, value) => {
+                                      void handlePreferenceChange(itemType, itemId, value)
+                                    }}
+                                    onSaveField={(rowType, rowItem, field) => {
+                                      void saveDesktopEditingField(rowType, rowItem, field)
+                                    }}
+                                    onSaveGoogleMapsUrl={saveBackupItemGoogleMapsUrl}
+                                    onSetPendingDeletion={(deletion) => setPendingDeletion(deletion)}
+                                    onStartEditing={startDesktopEditing}
+                                    onUpdateDraft={setDesktopDraft}
+                                    preferences={trip.preferences}
+                                    saveError={desktopSaveError}
+                                    savingPreferenceKey={savingPreferenceKey}
+                                    showPrice={showPrice}
+                                    showWebsite={showWebsite}
+                                    type={type}
+                                    userId={userId}
+                                  />
+                                )
+                              })}
+                            </Fragment>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                    {desktopDropLineBounds &&
+                      desktopDropTarget &&
+                      desktopDraggedItem &&
+                      !isDesktopDropLineSuppressed &&
+                      createPortal(
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none fixed z-30 h-0.5 bg-brand shadow-sm"
+                          data-drop-indicator
+                          style={{
+                            left: desktopDropLineBounds.left,
+                            top: desktopDropTarget.lineY - 1,
+                            width: desktopDropLineBounds.width,
+                          }}
+                        />,
+                        document.body,
+                      )}
+                  </div>
+                </div>
               </div>
             </div>
           </MobileDayPager>

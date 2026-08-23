@@ -18,6 +18,7 @@ type SpreadsheetItineraryRowProps = {
   item: Activity | Meal
   type: ItineraryRow["type"]
   dayDate: string
+  dateLabel?: string
   itemIndex: number
   draft: ItemDraft | null
   activeField: EditableField | null
@@ -52,7 +53,8 @@ type SpreadsheetItineraryRowProps = {
     url: string | null,
   ) => Promise<string | null>
   onMoveToBackup: (type: ItineraryRow["type"], item: Activity | Meal) => void
-  onOpenMap: (type: "activity" | "meal", itemId: string) => void
+  moveActionLabel?: string
+  onOpenMap?: (type: "activity" | "meal", itemId: string) => void
   onPreferenceChange: (
     itemType: TripItemType,
     itemId: string,
@@ -72,6 +74,7 @@ export function SpreadsheetItineraryRow({
   item,
   type,
   dayDate,
+  dateLabel,
   itemIndex,
   draft,
   activeField,
@@ -91,6 +94,7 @@ export function SpreadsheetItineraryRow({
   onSetPendingDeletion,
   onSaveGoogleMapsUrl,
   onMoveToBackup,
+  moveActionLabel,
   onOpenMap,
   onPreferenceChange,
   onDragStart,
@@ -161,7 +165,7 @@ export function SpreadsheetItineraryRow({
             <tbody>
               <tr className="group-hover:bg-surface-soft">
                 <SpreadsheetCell className="border-b-0 text-base font-semibold text-brand">
-                  {formatDate(item.tripDate ?? dayDate)}
+                  {dateLabel ?? formatDate(item.tripDate ?? dayDate)}
                 </SpreadsheetCell>
                 <SpreadsheetCell className="border-b-0 text-base font-semibold">
                   {activeField === "title" && draft ? (
@@ -293,10 +297,11 @@ export function SpreadsheetItineraryRow({
                     <SpreadsheetItemActions
                       isBusy={isSaving}
                       item={item}
+                      moveActionLabel={moveActionLabel}
                       onChangeGoogleMapsUrl={(url) => onSaveGoogleMapsUrl(type, item, url)}
                       onDelete={() => onSetPendingDeletion({ item, type })}
                       onMoveToBackup={() => onMoveToBackup(type, item)}
-                      onOpenMap={() => onOpenMap(type, item.id)}
+                      onOpenMap={onOpenMap ? () => onOpenMap(type, item.id) : undefined}
                     />
                   </div>
                 </SpreadsheetCell>

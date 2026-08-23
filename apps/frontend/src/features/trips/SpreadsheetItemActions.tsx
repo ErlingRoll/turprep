@@ -12,6 +12,7 @@ type SpreadsheetItemActionsProps = {
   onDelete: () => void
   onMoveToBackup: () => void
   onOpenMap?: () => void
+  moveActionLabel?: string
 }
 
 export function SpreadsheetItemActions({
@@ -21,6 +22,7 @@ export function SpreadsheetItemActions({
   onDelete,
   onMoveToBackup,
   onOpenMap,
+  moveActionLabel,
 }: SpreadsheetItemActionsProps) {
   const { t } = useTranslation()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -109,7 +111,7 @@ export function SpreadsheetItemActions({
                   }}
                   type="button"
                 >
-                  {t("backup.moveToBackup")}
+                  {moveActionLabel ?? t("backup.moveToBackup")}
                 </button>
                 <button
                   className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-on-surface hover:bg-surface-muted"

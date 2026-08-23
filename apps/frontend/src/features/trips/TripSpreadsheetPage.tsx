@@ -39,8 +39,16 @@ import {
 import { replaceActivityInTrip, replaceHousingStayInTrip, replaceMealInTrip } from "./trip-state"
 import { TripSettings } from "./TripSettings"
 import { SpreadsheetHeaderCell } from "./SpreadsheetCell"
+import {
+  getDraggedItemKey,
+  getItineraryRowKey,
+  getNearestSpreadsheetDropTarget,
+  isDragBlockedTarget,
+  setSpreadsheetDragData,
+} from "./spreadsheet-drag"
 import { SpreadsheetHousingContent } from "./SpreadsheetHousingContent"
 import { SpreadsheetItineraryRow } from "./SpreadsheetItineraryRow"
+import { getSpreadsheetItemDraft } from "./spreadsheet-item-draft"
 import type {
   EditableField,
   HousingDraft,
@@ -89,16 +97,6 @@ const housingEditableFields: HousingEditableField[] = [
   "price",
   "website",
 ]
-
-function getItemDraft(item: Activity | Meal): ItemDraft {
-  return {
-    allDay: item.allDay,
-    endTime: item.endTime ?? "",
-    notes: item.notes ?? "",
-    startTime: item.startTime ?? "",
-    title: item.title ?? item.placeName ?? "",
-  }
-}
 
 type ItemTimeUpdate = {
   endTime: string | null
@@ -154,17 +152,6 @@ function rebaseItemTime(item: Activity | Meal, startTime: string): ItemTimeUpdat
     endTime: formatTimeMinutes(endMinutes),
     startTime,
   }
-}
-
-function getItineraryRowKey(row: ItineraryRow) {
-  return `${row.type}:${row.item.id}`
-}
-
-function isDragBlockedTarget(target: EventTarget | null) {
-  return (
-    target instanceof HTMLElement &&
-    Boolean(target.closest("button, input, select, textarea, [contenteditable='true']"))
-  )
 }
 
 function getItineraryRows(trip: TripDetail, date: string): ItineraryRow[] {
@@ -318,50 +305,6 @@ export function TripSpreadsheetPage({
   function setDropTarget(nextTarget: SpreadsheetDropTarget | null) {
     dropTargetRef.current = nextTarget
     setDropTargetState(nextTarget)
-  }
-
-  function getNearestDropTarget(dayDate: string, clientY: number) {
-    const table = tableRef.current
-    if (!table) {
-      return null
-    }
-
-    const itemRows = Array.from(
-      table.querySelectorAll<HTMLTableRowElement>(
-        `tr[data-drop-day="${dayDate}"][data-drop-item-index]`,
-      ),
-    )
-    const landingZones =
-      itemRows.length > 0
-        ? (() => {
-            const rowBounds = itemRows.map((row) => row.getBoundingClientRect())
-            return [
-              { index: 0, lineY: rowBounds[0].top },
-              ...rowBounds.slice(1).map((bounds, index) => ({
-                index: index + 1,
-                lineY: (rowBounds[index].bottom + bounds.top) / 2,
-              })),
-              { index: rowBounds.length, lineY: rowBounds.at(-1)?.bottom ?? rowBounds[0].bottom },
-            ]
-          })()
-        : (() => {
-            const emptyRow = table.querySelector<HTMLTableRowElement>(
-              `tr[data-drop-empty-day="${dayDate}"]`,
-            )
-            if (!emptyRow) {
-              return []
-            }
-
-            const bounds = emptyRow.getBoundingClientRect()
-            return [{ index: 0, lineY: bounds.top + bounds.height / 2 }]
-          })()
-
-    return landingZones.reduce<SpreadsheetDropTarget | null>((nearest, zone) => {
-      const candidate = { dayDate, ...zone }
-      return !nearest || Math.abs(candidate.lineY - clientY) < Math.abs(nearest.lineY - clientY)
-        ? candidate
-        : nearest
-    }, null)
   }
 
   function startEditingDayTitle(day: TripDetail["days"][number]) {
@@ -786,20 +729,14 @@ export function TripSpreadsheetPage({
       return
     }
 
-    event.dataTransfer.effectAllowed = "move"
-    event.dataTransfer.setData("text/plain", getItineraryRowKey(row))
-    const dragPreview = document.createElement("div")
-    dragPreview.className =
-      "pointer-events-none fixed z-50 rounded-lg border border-brand bg-surface px-3 py-2 text-sm font-semibold text-on-surface shadow-lg"
-    dragPreview.textContent = `${row.type === "activity" ? t("spreadsheet.activity") : t("spreadsheet.meal")} Â· ${getDayItemTitle(
-      row.item,
-      t("tripDetails.untitledItem"),
-    )}`
-    dragPreview.style.left = "-1000px"
-    dragPreview.style.top = "-1000px"
-    document.body.appendChild(dragPreview)
-    event.dataTransfer.setDragImage(dragPreview, 16, 16)
-    window.setTimeout(() => dragPreview.remove(), 0)
+    setSpreadsheetDragData(
+      event,
+      getItineraryRowKey(row),
+      `${row.type === "activity" ? t("spreadsheet.activity") : t("spreadsheet.meal")} · ${getDayItemTitle(
+        row.item,
+        t("tripDetails.untitledItem"),
+      )}`,
+    )
     setDraggedItem({
       dayDate,
       itemId: row.item.id,
@@ -815,7 +752,7 @@ export function TripSpreadsheetPage({
 
     event.preventDefault()
     event.dataTransfer.dropEffect = "move"
-    const nextDropTarget = getNearestDropTarget(dayDate, event.clientY)
+    const nextDropTarget = getNearestSpreadsheetDropTarget(tableRef.current, dayDate, event.clientY)
     const currentTarget = dropTargetRef.current
     if (
       nextDropTarget &&
@@ -887,9 +824,7 @@ export function TripSpreadsheetPage({
     event.stopPropagation()
 
     const selectedDropTarget = dropTargetRef.current
-    const draggedItemKey = draggedItem
-      ? `${draggedItem.itemType}:${draggedItem.itemId}`
-      : event.dataTransfer.getData("text/plain")
+    const draggedItemKey = draggedItem ? getDraggedItemKey(draggedItem) : event.dataTransfer.getData("text/plain")
     setDraggedItem(null)
     setDropTarget(null)
 
@@ -999,7 +934,7 @@ export function TripSpreadsheetPage({
     }
 
     setEditingFieldKey(`${type}:${item.id}:${field}`)
-    setDraft(getItemDraft(item))
+    setDraft(getSpreadsheetItemDraft(item))
     setSaveError(null)
   }
 
