@@ -14,6 +14,7 @@ import { TripForm } from "./TripForm"
 import { TravelMode } from "./TravelMode"
 import { useTripRealtime } from "./useTripRealtime"
 import { useTripDaySelection } from "./useTripDaySelection"
+import { DesktopTripNavbar } from "./DesktopTripNavbar"
 import { LanguageSwitcher } from "../../components/LanguageSwitcher"
 import { MobileMenuButton } from "../../components/MobileMenuButton"
 import { ThemeToggle } from "../../components/ThemeToggle"
@@ -245,7 +246,16 @@ export function TripDashboard({ session }: TripDashboardProps) {
 
   return (
     <main className="min-h-screen bg-page text-ink">
-      <nav className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5 sm:px-8">
+      <DesktopTripNavbar
+        email={session.user.email}
+        isBackupMode={isBackupMode}
+        isPlanMode={isPlanMode}
+        isTravelMode={isTravelMode}
+        onSignOut={() => void signOut()}
+        trip={selectedTrip}
+        tripId={hasValidTripId ? tripId : undefined}
+      />
+      <nav className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5 sm:px-8 lg:hidden">
         <Link className="flex items-center gap-3 font-semibold tracking-tight text-brand" to="/">
           <span className="grid size-9 place-items-center rounded-xl bg-brand-surface text-lg text-on-brand">
             ✦
@@ -291,16 +301,16 @@ export function TripDashboard({ session }: TripDashboardProps) {
       )}
 
       {hasValidTripId ? (
-        <section className="mx-auto max-w-7xl px-5 pb-12 pt-6 sm:px-8 sm:pt-10">
+        <section className="mx-auto max-w-7xl px-5 pb-12 pt-6 sm:px-8 sm:pt-10 lg:pt-8">
           <button
-            className="inline-flex items-center gap-2 rounded-xl px-2 py-2 text-sm font-semibold text-muted transition hover:bg-surface-muted hover:text-on-surface"
+            className="inline-flex items-center gap-2 rounded-xl px-2 py-2 text-sm font-semibold text-muted transition hover:bg-surface-muted hover:text-on-surface lg:hidden"
             onClick={goBackToOverview}
             type="button"
           >
             <span aria-hidden="true">←</span>
             {t("dashboard.backToTrips")}
           </button>
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 lg:mt-0">
             <h1 className="text-3xl font-medium tracking-[-0.04em] text-brand">
               {isTravelMode
                 ? t("travelMode.title")
@@ -326,9 +336,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
           )}
           <nav
             aria-label={t("tripModes.plan")}
-            className={`mt-5 grid grid-cols-3 rounded-xl bg-surface-muted p-1 ${
-              isPlanMode ? "" : "lg:sticky lg:top-0 lg:z-20"
-            }`}
+            className="mt-5 grid grid-cols-3 rounded-xl bg-surface-muted p-1 lg:hidden"
           >
             <Link
               className={`rounded-lg px-3 py-2 text-center text-sm font-semibold ${
