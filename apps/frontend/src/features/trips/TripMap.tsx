@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import { importLibrary, setOptions } from "@googlemaps/js-api-loader"
+import {
+  getGooglePlaceDetails,
+  getGooglePlacePhoto,
+  type GooglePlaceDetails,
+} from "../../api"
 import { formatDate } from "../../lib/date-format"
+import { getErrorMessage } from "../../lib/errors"
 import { MobileMenuButton } from "../../components/MobileMenuButton"
 
 export type TripMapMarker = {
@@ -11,9 +17,11 @@ export type TripMapMarker = {
   date: string
   latitude: number
   longitude: number
+  googleMapsUrl?: string | null
 }
 
 type TripMapProps = {
+  accessToken: string
   markers: TripMapMarker[]
   renderMarkerDetails?: (marker: TripMapMarker) => ReactNode
   onMarkerClick?: (marker: TripMapMarker) => void
@@ -106,7 +114,25 @@ function markerIcon(marker: TripMapMarker): google.maps.Icon {
   }
 }
 
+function formatGoogleValue(value: string) {
+  return value
+    .replaceAll("_", " ")
+    .toLocaleLowerCase()
+    .replace(/^\w/, (character) => character.toLocaleUpperCase())
+}
+
+function formatGooglePriceLevel(priceLevel: string) {
+  return {
+    PRICE_LEVEL_FREE: "Free",
+    PRICE_LEVEL_INEXPENSIVE: "€",
+    PRICE_LEVEL_MODERATE: "€€",
+    PRICE_LEVEL_EXPENSIVE: "€€€",
+    PRICE_LEVEL_VERY_EXPENSIVE: "€€€€",
+  }[priceLevel] ?? formatGoogleValue(priceLevel)
+}
+
 export function TripMap({
+  accessToken,
   markers,
   renderMarkerDetails,
   onMarkerClick,
@@ -119,6 +145,11 @@ export function TripMap({
   const { t } = useTranslation()
   const [isMobileOpen, setIsMobileOpen] = useState(false)
   const [selectedMarker, setSelectedMarker] = useState<TripMapMarker | null>(null)
+  const [googlePlaceDetails, setGooglePlaceDetails] = useState<GooglePlaceDetails | null>(null)
+  const [googlePlaceError, setGooglePlaceError] = useState<string | null>(null)
+  const [isLoadingGooglePlace, setIsLoadingGooglePlace] = useState(false)
+  const [googlePlacePhotoUrls, setGooglePlacePhotoUrls] = useState<string[]>([])
+  const [googlePlacePhotoError, setGooglePlacePhotoError] = useState<string | null>(null)
   const [isMarkerDetailsClosing, setIsMarkerDetailsClosing] = useState(false)
   const [isLocationEditMode, setIsLocationEditMode] = useState(false)
   const [draftLocation, setDraftLocation] = useState<{
@@ -155,7 +186,7 @@ export function TripMap({
 
     let isCancelled = false
     const markerMap = markerRefs.current
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim()
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 
     if (!apiKey) {
       setMapLoadError(t("tripMap.googleMapsUnavailable"))
@@ -304,6 +335,79 @@ export function TripMap({
   }, [markers])
 
   useEffect(() => {
+    let isCancelled = false
+    const googleMapsUrl = selectedMarker?.googleMapsUrl
+
+    setGooglePlaceDetails(null)
+    setGooglePlaceError(null)
+    setIsLoadingGooglePlace(false)
+
+    if (!googleMapsUrl) {
+      return
+    }
+
+    setIsLoadingGooglePlace(true)
+    void getGooglePlaceDetails(accessToken, googleMapsUrl)
+      .then((details) => {
+        if (!isCancelled) {
+          setGooglePlaceDetails(details)
+        }
+      })
+      .catch((reason: unknown) => {
+        if (!isCancelled) {
+          setGooglePlaceError(getErrorMessage(reason))
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsLoadingGooglePlace(false)
+        }
+      })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [accessToken, selectedMarker?.googleMapsUrl])
+
+  useEffect(() => {
+    let isCancelled = false
+    const photos = googlePlaceDetails?.photos.slice(0, 4) ?? []
+
+    setGooglePlacePhotoUrls([])
+    setGooglePlacePhotoError(null)
+
+    if (photos.length === 0) {
+      return
+    }
+
+    void Promise.all(
+      photos.map((photo) =>
+        getGooglePlacePhoto(accessToken, photo.name).then((blob) => URL.createObjectURL(blob)),
+      ),
+    )
+      .then((photoUrls) => {
+        if (!isCancelled) {
+          setGooglePlacePhotoUrls(photoUrls)
+        } else {
+          photoUrls.forEach((photoUrl) => URL.revokeObjectURL(photoUrl))
+        }
+      })
+      .catch((reason: unknown) => {
+        if (!isCancelled) {
+          setGooglePlacePhotoError(getErrorMessage(reason))
+        }
+      })
+
+    return () => {
+      isCancelled = true
+      setGooglePlacePhotoUrls((photoUrls) => {
+        photoUrls.forEach((photoUrl) => URL.revokeObjectURL(photoUrl))
+        return []
+      })
+    }
+  }, [accessToken, googlePlaceDetails])
+
+  useEffect(() => {
     if (!focusMarker || !mapRef.current || !isMapReady) {
       return
     }
@@ -372,6 +476,129 @@ export function TripMap({
       setIsMarkerDetailsClosing(false)
       markerDetailsCloseTimeoutRef.current = null
     }, markerDetailsAnimationDuration)
+  }
+
+  function renderGooglePlaceDetails() {
+    if (!selectedMarker?.googleMapsUrl) {
+      return null
+    }
+
+    if (isLoadingGooglePlace) {
+      return (
+        <p className="rounded-xl bg-surface-soft p-3 text-sm text-muted">
+          {t("tripMap.googleDetailsLoading")}
+        </p>
+      )
+    }
+
+    if (googlePlaceError) {
+      return (
+        <p className="rounded-xl bg-warning-surface p-3 text-sm text-warning-body" role="alert">
+          {googlePlaceError}
+        </p>
+      )
+    }
+
+    if (!googlePlaceDetails) {
+      return null
+    }
+
+    return (
+      <section className="grid gap-3 rounded-xl bg-surface-soft p-3">
+        <div>
+          <h3 className="font-semibold text-brand">{googlePlaceDetails.name}</h3>
+          <p className="mt-1 text-sm text-muted">{googlePlaceDetails.address}</p>
+          {googlePlaceDetails.category && (
+            <p className="mt-1 text-sm text-muted">{googlePlaceDetails.category}</p>
+          )}
+        </div>
+        {googlePlaceDetails.summary && (
+          <p className="text-sm leading-6 text-on-surface">{googlePlaceDetails.summary}</p>
+        )}
+        {(googlePlaceDetails.businessStatus || googlePlaceDetails.priceLevel) && (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
+            {googlePlaceDetails.businessStatus && (
+              <span>
+                {t("tripMap.businessStatus")}: {formatGoogleValue(googlePlaceDetails.businessStatus)}
+              </span>
+            )}
+            {googlePlaceDetails.priceLevel && (
+              <span>
+                {t("tripMap.priceLevel")}: {formatGooglePriceLevel(googlePlaceDetails.priceLevel)}
+              </span>
+            )}
+          </div>
+        )}
+        {googlePlaceDetails.phoneNumber && (
+          <a
+            className="text-sm font-semibold text-brand underline"
+            href={`tel:${googlePlaceDetails.phoneNumber}`}
+          >
+            {googlePlaceDetails.phoneNumber}
+          </a>
+        )}
+        {googlePlaceDetails.websiteUrl && (
+          <a
+            className="break-all text-sm font-semibold text-brand underline"
+            href={googlePlaceDetails.websiteUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            {t("tripMap.website")}
+          </a>
+        )}
+        {googlePlaceDetails.rating !== null && (
+          <p className="text-sm text-on-surface">
+            {t("tripMap.rating")}: {googlePlaceDetails.rating.toFixed(1)} / 5
+            {googlePlaceDetails.userRatingCount !== null
+              ? ` (${googlePlaceDetails.userRatingCount.toLocaleString()})`
+              : ""}
+          </p>
+        )}
+        {googlePlaceDetails.openingHours && (
+          <div className="text-sm text-on-surface">
+            <p className="font-semibold">{t("tripMap.openingHours")}</p>
+            <p className="mt-1 text-muted">
+              {googlePlaceDetails.openingHours.openNow === null
+                ? ""
+                : googlePlaceDetails.openingHours.openNow
+                  ? t("tripMap.openNow")
+                  : t("tripMap.closedNow")}
+            </p>
+            <ul className="mt-1 grid gap-0.5 text-muted">
+              {googlePlaceDetails.openingHours.weekdayDescriptions.map((description) => (
+                <li key={description}>{description}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {googlePlacePhotoError && (
+          <p className="text-sm text-muted" role="status">
+            {t("tripMap.photosUnavailable")}
+          </p>
+        )}
+        {googlePlacePhotoUrls.length > 0 && (
+          <div className="grid grid-cols-2 gap-2">
+            {googlePlacePhotoUrls.map((photoUrl) => (
+              <img
+                alt={googlePlaceDetails.name}
+                className="aspect-square w-full rounded-lg object-cover"
+                key={photoUrl}
+                src={photoUrl}
+              />
+            ))}
+          </div>
+        )}
+        <a
+          className="text-sm font-semibold text-brand underline"
+          href={selectedMarker.googleMapsUrl}
+          rel="noreferrer"
+          target="_blank"
+        >
+          {t("tripDetails.openGoogleMaps")}
+        </a>
+      </section>
+    )
   }
 
   function resetMapView() {
@@ -561,16 +788,17 @@ export function TripMap({
                 <>
                   <div className="flex shrink-0 items-center justify-between gap-3">
                     <h2 className="font-semibold text-brand">{t("tripMap.locationDetails")}</h2>
-                    <button
-                      aria-label={t("tripMap.closeDetails")}
-                      className="rounded-lg px-2 py-1 text-sm font-semibold text-muted hover:bg-surface-muted hover:text-on-surface"
-                      onClick={closeMarkerDetails}
-                      type="button"
-                    >
-                      ×
-                    </button>
+                    <MobileMenuButton
+                      closeLabel={t("tripMap.closeDetails")}
+                      isOpen
+                      menuLabel={t("tripMap.closeDetails")}
+                      onToggle={closeMarkerDetails}
+                      openLabel={t("tripMap.closeDetails")}
+                      showOnDesktop
+                    />
                   </div>
                   <div className="trip-map-marker-details">{renderMarkerDetails(selectedMarker)}</div>
+                  {renderGooglePlaceDetails()}
                 </>
               )}
             </div>

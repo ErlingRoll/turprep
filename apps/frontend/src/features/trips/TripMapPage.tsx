@@ -8,7 +8,8 @@ import {
   type TripDetail,
 } from "../../api"
 import { formatDate } from "../../lib/date-format"
-import { getDayItemTitle } from "../../lib/activity-format"
+import { formatActivityTime, getDayItemTitle } from "../../lib/activity-format"
+import { shiftDate } from "../../lib/trip-dates"
 import {
   replaceActivityInTrip,
   replaceHousingStayInTrip,
@@ -46,6 +47,7 @@ export function TripMapPage({
                   longitude: activity.longitude,
                   title: getDayItemTitle(activity, t("tripDetails.untitledItem")),
                   type: "activity" as const,
+                  googleMapsUrl: activity.googleMapsUrl,
                 },
               ]
             : [],
@@ -64,6 +66,7 @@ export function TripMapPage({
                 longitude: meal.longitude,
                 title: getDayItemTitle(meal, t("tripDetails.untitledItem")),
                 type: "meal" as const,
+                googleMapsUrl: meal.googleMapsUrl,
               },
             ]
           : [],
@@ -80,6 +83,7 @@ export function TripMapPage({
                 longitude: stay.longitude,
                 title: stay.name,
                 type: "housing" as const,
+                googleMapsUrl: stay.googleMapsUrl,
               },
             ]
           : [],
@@ -102,6 +106,7 @@ export function TripMapPage({
                   longitude: activity.longitude,
                   title: getDayItemTitle(activity, t("tripDetails.untitledItem")),
                   type: "activity" as const,
+                  googleMapsUrl: activity.googleMapsUrl,
                 },
               ]
             : [],
@@ -118,6 +123,7 @@ export function TripMapPage({
                   longitude: meal.longitude,
                   title: getDayItemTitle(meal, t("tripDetails.untitledItem")),
                   type: "meal" as const,
+                  googleMapsUrl: meal.googleMapsUrl,
                 },
               ]
             : [],
@@ -132,6 +138,7 @@ export function TripMapPage({
                   longitude: stay.longitude,
                   title: stay.name,
                   type: "housing" as const,
+                  googleMapsUrl: stay.googleMapsUrl,
                 },
               ]
             : [],
@@ -175,17 +182,101 @@ export function TripMapPage({
   }
 
   function renderMarkerDetails(marker: TripMapMarker) {
+    if (marker.type === "housing") {
+      const stay = trip.housingStays.find((currentStay) => currentStay.id === marker.id)
+
+      if (!stay) {
+        return null
+      }
+
+      return (
+        <article className="rounded-2xl bg-surface/95 p-4 shadow-card backdrop-blur-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+            {t("tripMap.housing")}
+          </p>
+          <h2 className="mt-1 text-lg font-semibold text-brand">{stay.name}</h2>
+          <p className="mt-1 text-sm text-muted">
+            {formatDate(stay.checkIn ?? trip.startDate)} –{" "}
+            {formatDate(stay.checkOut ?? shiftDate(trip.endDate, 1))}
+          </p>
+          {stay.placeAddress && <p className="mt-2 text-sm text-muted">{stay.placeAddress}</p>}
+          {stay.notes?.trim() && (
+            <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{stay.notes}</p>
+          )}
+          {stay.website && (
+            <a
+              className="mt-2 block break-all text-sm font-semibold text-brand underline"
+              href={stay.website}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {t("itemDetails.website")}: {stay.website}
+            </a>
+          )}
+          {stay.googleMapsUrl && (
+            <a
+              className="mt-2 block text-sm font-semibold text-brand underline"
+              href={stay.googleMapsUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {t("tripDetails.openGoogleMaps")}
+            </a>
+          )}
+        </article>
+      )
+    }
+
+    const item =
+      marker.type === "activity"
+        ? [...trip.days.flatMap((day) => day.activities), ...trip.backupActivities].find(
+            (activity) => activity.id === marker.id,
+          )
+        : trip.meals.find((meal) => meal.id === marker.id)
+
+    if (!item) {
+      return null
+    }
+
     return (
       <div className="rounded-2xl bg-surface/95 p-4 shadow-card backdrop-blur-sm">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-          {marker.type === "activity"
-            ? t("tripMap.activity")
-            : marker.type === "meal"
-              ? t("tripMap.meal")
-              : t("tripMap.housing")}
+          {marker.type === "activity" ? t("tripMap.activity") : t("tripMap.meal")}
         </p>
-        <h2 className="mt-1 text-lg font-semibold text-brand">{marker.title}</h2>
+        <h2 className="mt-1 text-lg font-semibold text-brand">
+          {getDayItemTitle(item, t("tripDetails.untitledItem"))}
+        </h2>
         <p className="mt-1 text-sm text-muted">{formatDate(marker.date)}</p>
+        <p className="mt-2 text-sm text-on-surface">
+          {formatActivityTime(item, {
+            allDay: t("tripDetails.allDay"),
+            timeNotSet: t("tripDetails.timeNotSet"),
+          })}
+        </p>
+        {item.placeAddress && <p className="mt-2 text-sm text-muted">{item.placeAddress}</p>}
+        {item.notes?.trim() && (
+          <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{item.notes}</p>
+        )}
+        {item.website && (
+          <a
+            className="mt-2 block break-all text-sm font-semibold text-brand underline"
+            href={item.website}
+            rel="noreferrer"
+            target="_blank"
+          >
+            {t("itemDetails.website")}: {item.website}
+          </a>
+        )}
+        {item.googleMapsUrl && (
+          <a
+            className="mt-2 block text-sm font-semibold text-brand underline"
+            href={item.googleMapsUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            {t("tripDetails.openGoogleMaps")}
+          </a>
+        )}
       </div>
     )
   }
@@ -219,6 +310,7 @@ export function TripMapPage({
           ) : undefined
         }
         markers={markers}
+        accessToken={accessToken}
         onMarkerLocationSave={saveMarkerLocation}
         renderMarkerDetails={renderMarkerDetails}
       />

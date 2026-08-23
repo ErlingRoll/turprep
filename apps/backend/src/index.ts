@@ -1,6 +1,9 @@
 import "dotenv/config"
 import { createApp } from "./app.js"
 import { PRODUCT_NAME } from "./brand.js"
+import { validateEnvironment } from "./config.js"
+
+validateEnvironment()
 
 const port = Number(process.env.PORT ?? 3001)
 

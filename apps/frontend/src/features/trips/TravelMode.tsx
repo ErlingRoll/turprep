@@ -9,6 +9,7 @@ import { TripMap, type TripMapMarker } from "./TripMap"
 import { DayChevron, MobileDayPager } from "./MobileDayPager"
 
 type TravelModeProps = {
+  accessToken: string
   trip: TripDetail
   showDetails: boolean
 }
@@ -32,7 +33,7 @@ function getRelevantDayIndex(days: TripDetail["days"]) {
   return nextDayIndex >= 0 ? nextDayIndex : days.length - 1
 }
 
-export function TravelMode({ trip, showDetails }: TravelModeProps) {
+export function TravelMode({ accessToken, trip, showDetails }: TravelModeProps) {
   const { t } = useTranslation()
   const [selectedDate, setSelectedDate] = useState(
     () => trip.days[getRelevantDayIndex(trip.days)]?.date ?? "",
@@ -124,6 +125,7 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
                 date: selectedDay.date,
                 latitude: activity.latitude,
                 longitude: activity.longitude,
+                googleMapsUrl: activity.googleMapsUrl,
               },
             ]
           : [],
@@ -138,6 +140,7 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
                 date: selectedDay.date,
                 latitude: meal.latitude,
                 longitude: meal.longitude,
+                googleMapsUrl: meal.googleMapsUrl,
               },
             ]
           : [],
@@ -152,6 +155,7 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
                 date: selectedDay.date,
                 latitude: stay.latitude,
                 longitude: stay.longitude,
+                googleMapsUrl: stay.googleMapsUrl,
               },
             ]
           : [],
@@ -502,6 +506,7 @@ export function TravelMode({ trip, showDetails }: TravelModeProps) {
           </div>
         </MobileDayPager>
         <TripMap
+          accessToken={accessToken}
           focusMarker={mapFocusMarker}
           markers={mapMarkers}
           onMarkerClick={handleMapMarkerClick}

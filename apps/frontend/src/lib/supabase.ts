@@ -1,19 +1,16 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js"
 import { readMigratedStorageValue, storageKeys } from "./brand"
+import { validateFrontendEnvironment } from "./config"
 
 const persistencePreferenceKey = storageKeys.rememberSession
 
 function getSupabaseConfig() {
-  const url = import.meta.env.VITE_SUPABASE_URL
-  const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+  validateFrontendEnvironment()
 
-  if (!url || !publishableKey) {
-    throw new Error(
-      "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY to apps/frontend/.env.local.",
-    )
+  return {
+    publishableKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+    url: import.meta.env.VITE_SUPABASE_URL,
   }
-
-  return { url, publishableKey }
 }
 
 function getStoredPersistencePreference(): boolean {

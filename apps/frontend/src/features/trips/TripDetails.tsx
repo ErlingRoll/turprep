@@ -187,6 +187,7 @@ export function TripDetails({
                       date: day.date,
                       latitude: activity.latitude,
                       longitude: activity.longitude,
+                      googleMapsUrl: activity.googleMapsUrl,
                     },
                   ]
                 : [],
@@ -207,6 +208,7 @@ export function TripDetails({
                 date: meal.tripDate,
                 latitude: meal.latitude,
                 longitude: meal.longitude,
+                googleMapsUrl: meal.googleMapsUrl,
               },
             ]
           : [],
@@ -229,6 +231,7 @@ export function TripDetails({
                 date: matchingDate,
                 latitude: stay.latitude,
                 longitude: stay.longitude,
+                googleMapsUrl: stay.googleMapsUrl,
               },
             ]
           : []
@@ -1461,6 +1464,7 @@ export function TripDetails({
         </div>
         <aside className="contents lg:block">
           <TripMap
+            accessToken={accessToken}
             focusMarker={mapFocusMarker}
             markers={mapMarkers}
             onMarkerClick={handleMapMarkerClick}

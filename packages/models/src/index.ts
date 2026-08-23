@@ -38,6 +38,12 @@ export {
 } from "./trip.js"
 export { isAllowedGoogleMapsUrl } from "./google-maps.js"
 export {
+  GooglePlaceDetailsInputSchema,
+  GooglePlaceDetailsSchema,
+  GooglePlaceOpeningHoursSchema,
+  GooglePlacePhotoSchema,
+} from "./google-place.js"
+export {
   SetTripItemPreferenceInputSchema,
   TripItemPreferenceSchema,
   TripItemPreferenceValueSchema,
@@ -87,6 +93,12 @@ export type {
   TripItemDetailVisibility,
   UpdateTripItemDetailVisibilityInput,
 } from "./trip.js"
+export type {
+  GooglePlaceDetails,
+  GooglePlaceDetailsInput,
+  GooglePlaceOpeningHours,
+  GooglePlacePhoto,
+} from "./google-place.js"
 export type {
   InviteTripMemberInput,
   RequestTripAccessInput,

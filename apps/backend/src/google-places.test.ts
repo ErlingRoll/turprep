@@ -33,3 +33,57 @@ test("Google Maps place URLs fall back when the Places response cannot be parsed
     globalThis.fetch = originalFetch
   }
 })
+
+test("Google Maps place URLs load rich fields from the Place Details endpoint", async () => {
+  const originalFetch = globalThis.fetch
+  const requests: Request[] = []
+  globalThis.fetch = async (input, init) => {
+    requests.push(new Request(input, init))
+
+    if (requests.length === 1) {
+      return new Response(JSON.stringify({ places: [{ id: "ChIJexample" }] }), { status: 200 })
+    }
+
+    return new Response(
+      JSON.stringify({
+        id: "ChIJexample",
+        displayName: { text: "teamLab Borderless" },
+        formattedAddress: "1-3-28 Aomi, Koto City, Tokyo",
+        primaryTypeDisplayName: { text: "Museum" },
+        nationalPhoneNumber: "+81 3-6368-4292",
+        rating: 4.7,
+        userRatingCount: 12000,
+        regularOpeningHours: {
+          openNow: true,
+          weekdayDescriptions: ["Monday: 10:00 AM – 9:00 PM"],
+        },
+        photos: [
+          {
+            name: "places/ChIJexample/photos/photo1",
+            widthPx: 1200,
+            heightPx: 800,
+          },
+        ],
+        location: {
+          latitude: 35.6620689,
+          longitude: 139.7432671,
+        },
+      }),
+      { status: 200 },
+    )
+  }
+
+  try {
+    const place = await createGooglePlacesResolver("test-key")(teamLabBorderlessUrl)
+
+    assert.equal(requests.length, 2)
+    assert.equal(requests[0].method, "POST")
+    assert.equal(requests[1].url, "https://places.googleapis.com/v1/places/ChIJexample")
+    assert.equal(place.category, "Museum")
+    assert.equal(place.phoneNumber, "+81 3-6368-4292")
+    assert.equal(place.rating, 4.7)
+    assert.equal(place.photos?.[0]?.name, "places/ChIJexample/photos/photo1")
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})

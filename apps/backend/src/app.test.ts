@@ -276,6 +276,36 @@ test("health endpoint is public", async () => {
   assert.equal(response.body.status, "ok")
 })
 
+test("Google Places details endpoint returns enriched place details", async () => {
+  const response = await request(
+    createTestApp(async () => ({
+      placeId: "place-1",
+      name: "Oslo Camping",
+      address: "Ekebergveien 65, Oslo",
+      latitude: 59.9144933,
+      longitude: 10.7475191,
+      phoneNumber: "+47 123 45 678",
+      websiteUrl: "https://example.com/oslo-camping",
+      rating: 4.5,
+      userRatingCount: 123,
+      openingHours: {
+        openNow: true,
+        weekdayDescriptions: ["Monday: 10:00 AM – 10:00 PM"],
+      },
+      photos: [{ name: "places/place-1/photos/photo-1", widthPx: 800, heightPx: 600 }],
+    })),
+  )
+    .post("/api/google-places/details")
+    .set("Authorization", "Bearer valid-token")
+    .send({ googleMapsUrl: "https://maps.app.goo.gl/example" })
+
+  assert.equal(response.status, 200)
+  assert.equal(response.body.placeId, "place-1")
+  assert.equal(response.body.phoneNumber, "+47 123 45 678")
+  assert.equal(response.body.rating, 4.5)
+  assert.equal(response.body.photos[0].name, "places/place-1/photos/photo-1")
+})
+
 test("local development exposes unexpected backend error messages", async () => {
   const previousNodeEnv = process.env.NODE_ENV
   process.env.NODE_ENV = "development"
@@ -888,15 +918,20 @@ test("Google Places resolves a full place URL without redirect resolution", asyn
 
   globalThis.fetch = async (input) => {
     requests.push(String(input))
+
+    if (requests.length === 1) {
+      return new Response(JSON.stringify({ places: [{ id: "ChIJosloCamping" }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
     return new Response(
       JSON.stringify({
-        places: [
-          {
-            displayName: { text: "Oslo Camping" },
-            formattedAddress: "Ekebergveien 65, Oslo",
-            location: { latitude: 59.9144933, longitude: 10.7475191 },
-          },
-        ],
+        id: "ChIJosloCamping",
+        displayName: { text: "Oslo Camping" },
+        formattedAddress: "Ekebergveien 65, Oslo",
+        location: { latitude: 59.9144933, longitude: 10.7475191 },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     )
@@ -906,12 +941,26 @@ test("Google Places resolves a full place URL without redirect resolution", asyn
     const place = await createGooglePlacesResolver("test-key")(url)
 
     assert.deepEqual(place, {
+      placeId: "ChIJosloCamping",
       name: "Oslo Camping",
       address: "Ekebergveien 65, Oslo",
       latitude: 59.9144933,
       longitude: 10.7475191,
+      category: null,
+      businessStatus: null,
+      priceLevel: null,
+      summary: null,
+      phoneNumber: null,
+      websiteUrl: null,
+      rating: null,
+      userRatingCount: null,
+      openingHours: null,
+      photos: [],
     })
-    assert.deepEqual(requests, ["https://places.googleapis.com/v1/places:searchText"])
+    assert.deepEqual(requests, [
+      "https://places.googleapis.com/v1/places:searchText",
+      "https://places.googleapis.com/v1/places/ChIJosloCamping",
+    ])
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -932,10 +981,21 @@ test("Google Places uses full place URL coordinates when text search has no resu
     const place = await createGooglePlacesResolver("test-key")(url)
 
     assert.deepEqual(place, {
+      placeId: null,
       name: "Kazuya Rice Flour Bread Cafe",
       address: "Kazuya Rice Flour Bread Cafe",
       latitude: 35.6981009,
       longitude: 139.8002201,
+      category: null,
+      businessStatus: null,
+      priceLevel: null,
+      summary: null,
+      phoneNumber: null,
+      websiteUrl: null,
+      rating: null,
+      userRatingCount: null,
+      openingHours: null,
+      photos: [],
     })
   } finally {
     globalThis.fetch = originalFetch

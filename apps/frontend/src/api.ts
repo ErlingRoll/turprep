@@ -3,6 +3,7 @@ import {
   CreateActivityInputSchema,
   CreateHousingStayInputSchema,
   CreateMealInputSchema,
+  GooglePlaceDetailsSchema,
   HousingStaySchema,
   MealSchema,
   TripDetailSchema,
@@ -33,6 +34,7 @@ import {
   type CreateActivityInput,
   type CreateHousingStayInput,
   type CreateMealInput,
+  type GooglePlaceDetails,
   type CreateTripInput,
   type HousingStay,
   type Meal,
@@ -68,6 +70,7 @@ export type {
   CreateTripInput,
   CreateHousingStayInput,
   CreateMealInput,
+  GooglePlaceDetails,
   HousingStay,
   Meal,
   Trip,
@@ -125,8 +128,52 @@ async function request(path: string, accessToken: string, init?: RequestInit) {
   return response.status === 204 ? null : (response.json() as Promise<unknown>)
 }
 
+async function requestBlob(path: string, accessToken: string) {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    let message = `API request failed (${response.status})`
+
+    try {
+      const errorBody = (await response.json()) as { message?: string }
+      message = errorBody.message ?? message
+    } catch {
+      // Keep the status-based message when the server does not return JSON.
+    }
+
+    const error = new HttpError(message, response.status)
+    notifyUnhandledHttpError(error)
+    throw error
+  }
+
+  return response.blob()
+}
+
 export async function getTrips(accessToken: string): Promise<Trip[]> {
   return TripSchema.array().parse(await request("/api/trips", accessToken))
+}
+
+export async function getGooglePlaceDetails(
+  accessToken: string,
+  googleMapsUrl: string,
+): Promise<GooglePlaceDetails> {
+  return GooglePlaceDetailsSchema.parse(
+    await request("/api/google-places/details", accessToken, {
+      body: JSON.stringify({ googleMapsUrl }),
+      method: "POST",
+    }),
+  )
+}
+
+export async function getGooglePlacePhoto(
+  accessToken: string,
+  photoName: string,
+): Promise<Blob> {
+  return requestBlob(`/api/google-places/photo?name=${encodeURIComponent(photoName)}`, accessToken)
 }
 
 export async function getTrip(accessToken: string, tripId: string): Promise<TripDetail> {

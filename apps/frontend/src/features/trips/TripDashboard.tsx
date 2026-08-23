@@ -356,7 +356,11 @@ export function TripDashboard({ session }: TripDashboardProps) {
             </Link>
           </nav>
           {isTravelMode && selectedTrip ? (
-            <TravelMode showDetails={showItemDetails} trip={selectedTrip} />
+            <TravelMode
+              accessToken={session.access_token}
+              showDetails={showItemDetails}
+              trip={selectedTrip}
+            />
           ) : isBackupMode && selectedTrip ? (
             <TripBackupPage
               accessToken={session.access_token}

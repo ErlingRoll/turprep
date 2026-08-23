@@ -11,6 +11,8 @@ import {
   CreateHousingStayInputSchema,
   CreateMealInputSchema,
   CreateTripInputSchema,
+  GooglePlaceDetailsInputSchema,
+  GooglePlaceDetailsSchema,
   InviteTripMemberInputSchema,
   HousingStaySchema,
   MealSchema,
@@ -52,7 +54,9 @@ import {
 } from "./trip-repository.js"
 import {
   createGooglePlacesResolver,
+  createGooglePlacesPhotoResolver,
   GooglePlacesError,
+  type GooglePlacesPhotoResolver,
   type GooglePlacesResolver,
 } from "./google-places.js"
 import { createSharingEmailSender, type SharingEmailSender } from "./sharing-email.js"
@@ -67,6 +71,7 @@ export type AppDependencies = {
   authService?: AuthService
   tripRepository?: TripRepository
   googlePlacesResolver?: GooglePlacesResolver
+  googlePlacesPhotoResolver?: GooglePlacesPhotoResolver
   sharingEmailSender?: SharingEmailSender
 }
 
@@ -148,6 +153,8 @@ export function createApp(dependencies: AppDependencies = {}) {
   const authService = dependencies.authService ?? createSupabaseAuthService()
   const tripRepository = dependencies.tripRepository ?? createSupabaseTripRepository()
   const googlePlacesResolver = dependencies.googlePlacesResolver ?? createGooglePlacesResolver()
+  const googlePlacesPhotoResolver =
+    dependencies.googlePlacesPhotoResolver ?? createGooglePlacesPhotoResolver()
   const sharingEmailSender = dependencies.sharingEmailSender ?? createSharingEmailSender()
   const allowedOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:3000")
     .split(",")
@@ -163,6 +170,57 @@ export function createApp(dependencies: AppDependencies = {}) {
       timestamp: new Date().toISOString(),
     })
   })
+
+  app.post(
+    "/api/google-places/details",
+    (request, response, next) => requireAuthenticatedUser(authService, request, response, next),
+    async (request: Request, response: Response, next: NextFunction) => {
+      try {
+        const parsedInput = GooglePlaceDetailsInputSchema.safeParse(request.body)
+
+        if (!parsedInput.success) {
+          response.status(400).json({
+            message: "Invalid Google Maps link",
+            issues: parsedInput.error.issues,
+          })
+          return
+        }
+
+        const details = await googlePlacesResolver(parsedInput.data.googleMapsUrl)
+        response.json(GooglePlaceDetailsSchema.parse(details))
+      } catch (error) {
+        if (error instanceof GooglePlacesError) {
+          response.status(error.statusCode).json({ message: error.message })
+          return
+        }
+        next(error)
+      }
+    },
+  )
+
+  app.get(
+    "/api/google-places/photo",
+    (request, response, next) => requireAuthenticatedUser(authService, request, response, next),
+    async (request: Request, response: Response, next: NextFunction) => {
+      try {
+        const photoName = typeof request.query.name === "string" ? request.query.name : null
+
+        if (!photoName) {
+          response.status(400).json({ message: "Google place photo is invalid" })
+          return
+        }
+
+        const photo = await googlePlacesPhotoResolver(photoName)
+        response.type(photo.contentType).send(photo.body)
+      } catch (error) {
+        if (error instanceof GooglePlacesError) {
+          response.status(error.statusCode).json({ message: error.message })
+          return
+        }
+        next(error)
+      }
+    },
+  )
 
   app.get(
     "/api/trips",
