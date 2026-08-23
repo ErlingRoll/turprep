@@ -443,7 +443,7 @@ export function TripSpreadsheetPage({
     const normalizedGoogleMapsUrl = createDraft.googleMapsUrl.trim()
 
     if (normalizedGoogleMapsUrl && !isAllowedGoogleMapsUrl(normalizedGoogleMapsUrl)) {
-      setCreateGoogleMapsError(null)
+      setCreateGoogleMapsError(t("errors.googleMapsInvalid"))
       setCreateError(null)
       return
     }

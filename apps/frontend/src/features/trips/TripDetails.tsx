@@ -979,7 +979,7 @@ export function TripDetails({
     const normalizedGoogleMapsUrl = googleMapsUrl.trim()
 
     if (normalizedGoogleMapsUrl && !isAllowedGoogleMapsUrl(normalizedGoogleMapsUrl)) {
-      setGoogleMapsError(null)
+      setGoogleMapsError(t("errors.googleMapsInvalid"))
       setActivityError(null)
       return
     }
