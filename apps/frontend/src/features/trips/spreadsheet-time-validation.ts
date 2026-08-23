@@ -98,6 +98,30 @@ export function getDefaultEndTimeForStart(
   return formatTimeMinutes(Math.max(startMinutes, nearestValidEndMinutes))
 }
 
+export function getCollisionSafeEndTime(
+  rows: ItineraryRow[],
+  startTime: string | null,
+  endTime: string | null,
+  rowKey: string | null = null,
+) {
+  if (!startTime || !endTime) {
+    return endTime
+  }
+
+  const startMinutes = getTimeMinutes(startTime)
+  const endMinutes = getTimeMinutes(endTime)
+  if (startMinutes === null || endMinutes === null) {
+    return endTime
+  }
+
+  const nextStartMinutes = getNextTimedStartAfter(rows, rowKey, startMinutes)
+  if (nextStartMinutes === null) {
+    return endTime
+  }
+
+  return formatTimeMinutes(Math.max(startMinutes, Math.min(endMinutes, nextStartMinutes)))
+}
+
 function sortRowsChronologically(rows: ItineraryRow[]) {
   return [...rows]
     .map((row, index) => ({ index, row }))

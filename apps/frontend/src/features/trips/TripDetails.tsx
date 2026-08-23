@@ -31,6 +31,7 @@ import { ConfirmDialog } from "../../components/ConfirmDialog"
 import { getDefaultCurrency } from "../../lib/currency"
 import { TripAuxiliaryDetails } from "./TripAuxiliaryDetails"
 import { replaceActivityInTrip, replaceHousingStayInTrip, replaceMealInTrip } from "./trip-state"
+import { getCollisionSafeEndTime } from "./spreadsheet-time-validation"
 import { TripSettings } from "./TripSettings"
 import { DayItemForm } from "./DayItemForm"
 import { DayItemList } from "./DayItemList"
@@ -495,8 +496,23 @@ export function TripDetails({
   async function moveActivityToBackup(activity: Activity) {
     setActivityError(null)
     try {
+      const backupRows = [
+        ...currentTrip.backupActivities
+          .filter((currentActivity) => currentActivity.tripDate === activity.tripDate)
+          .map((item) => ({ item, type: "activity" as const })),
+        ...currentTrip.meals
+          .filter((meal) => meal.isBackup && meal.tripDate === activity.tripDate)
+          .map((item) => ({ item, type: "meal" as const })),
+      ]
+      const endTime = getCollisionSafeEndTime(
+        backupRows,
+        activity.startTime,
+        activity.endTime,
+        `activity:${activity.id}`,
+      )
       const saved = await updateActivity(accessToken, currentTrip.id, activity.id, {
         isBackup: true,
+        endTime,
       })
       onTripUpdated({
         ...currentTrip,
@@ -516,8 +532,23 @@ export function TripDetails({
   async function moveMealToBackup(meal: Meal) {
     setActivityError(null)
     try {
+      const backupRows = [
+        ...currentTrip.backupActivities
+          .filter((activity) => activity.tripDate === meal.tripDate)
+          .map((item) => ({ item, type: "activity" as const })),
+        ...currentTrip.meals
+          .filter((currentMeal) => currentMeal.isBackup && currentMeal.tripDate === meal.tripDate)
+          .map((item) => ({ item, type: "meal" as const })),
+      ]
+      const endTime = getCollisionSafeEndTime(
+        backupRows,
+        meal.startTime,
+        meal.endTime,
+        `meal:${meal.id}`,
+      )
       const saved = await updateMeal(accessToken, currentTrip.id, meal.id, {
         isBackup: true,
+        endTime,
       })
       onTripUpdated(replaceMealInTrip(currentTrip, saved))
     } catch (reason: unknown) {
@@ -986,12 +1017,29 @@ export function TripDetails({
     setGoogleMapsError(null)
 
     try {
+      const validationDay = currentTrip.days.find((day) => day.date === date)
+      const targetRows = validationDay
+        ? getDayItems(validationDay).map((item) => {
+            const record = getDayItemRecord(item)
+            return { item: record.item, type: record.itemType }
+          })
+        : []
+      const rowKey =
+        editingItemId && editingItemType ? `${editingItemType}:${editingItemId}` : null
+      const resolvedEndTime = allDay
+        ? null
+        : getCollisionSafeEndTime(
+            targetRows,
+            startTime || null,
+            endTime || null,
+            rowKey,
+          )
       const input = {
         tripDate: date,
         isBackup: false,
         title: title.trim() || null,
         startTime: allDay || !startTime ? null : startTime,
-        endTime: allDay || !endTime ? null : endTime,
+        endTime: resolvedEndTime,
         allDay,
         notes,
         googleMapsUrl: normalizedGoogleMapsUrl || null,

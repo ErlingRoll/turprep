@@ -33,7 +33,12 @@ import {
   type TripItemPreferenceValue,
   type TripItemType,
 } from "@turprep/models"
-import { replaceActivityInTrip, replaceHousingStayInTrip, replaceMealInTrip } from "./trip-state"
+import {
+  moveItemToBackupInTrip,
+  replaceActivityInTrip,
+  replaceHousingStayInTrip,
+  replaceMealInTrip,
+} from "./trip-state"
 import { TripSettings } from "./TripSettings"
 import { SpreadsheetHeaderCell } from "./SpreadsheetCell"
 import {
@@ -53,6 +58,7 @@ import { SpreadsheetItineraryRow } from "./SpreadsheetItineraryRow"
 import { getSpreadsheetItemDraft } from "./spreadsheet-item-draft"
 import {
   applyDefaultEndTimeForStartEdit,
+  getCollisionSafeEndTime,
   getDefaultEndTimeForStart,
   getRowsForTimeEdit,
   getTimeOrderValidationError,
@@ -112,6 +118,23 @@ function getItineraryRows(trip: TripDetail, date: string): ItineraryRow[] {
   const activityIds = new Set(day?.activities.map((activity) => activity.id))
 
   return sortDayItems([...(day?.activities ?? []), ...meals]).map((item) => ({
+    item,
+    type: activityIds.has(item.id) ? "activity" : "meal",
+  }))
+}
+
+function getBackupRows(trip: TripDetail, date: string): ItineraryRow[] {
+  const activityIds = new Set(
+    trip.backupActivities
+      .filter((activity) => activity.tripDate === date)
+      .map((activity) => activity.id),
+  )
+  const items = [
+    ...trip.backupActivities.filter((activity) => activity.tripDate === date),
+    ...trip.meals.filter((meal) => meal.isBackup && meal.tripDate === date),
+  ]
+
+  return sortDayItems(items).map((item) => ({
     item,
     type: activityIds.has(item.id) ? "activity" : "meal",
   }))
@@ -386,12 +409,19 @@ export function TripSpreadsheetPage({
     setCreateGoogleMapsError(null)
 
     try {
+      const endTime = createDraft.allDay
+        ? null
+        : getCollisionSafeEndTime(
+            getItineraryRows(trip, dayDate),
+            createDraft.startTime || null,
+            createDraft.endTime || null,
+          )
       const input = {
         tripDate: dayDate,
         isBackup: false,
         title: createDraft.title.trim() || null,
         startTime: createDraft.allDay || !createDraft.startTime ? null : createDraft.startTime,
-        endTime: createDraft.allDay || !createDraft.endTime ? null : createDraft.endTime,
+        endTime,
         allDay: createDraft.allDay,
         notes: createDraft.notes.trim() || null,
         googleMapsUrl: normalizedGoogleMapsUrl || null,
@@ -464,26 +494,35 @@ export function TripSpreadsheetPage({
   }
 
   async function moveItemToBackup(type: ItineraryRow["type"], item: Activity | Meal) {
+    const previousTrip = latestTripRef.current
+    const targetRows = item.tripDate ? getBackupRows(previousTrip, item.tripDate) : []
+    const endTime = getCollisionSafeEndTime(
+      targetRows,
+      item.startTime,
+      item.endTime,
+      `${type}:${item.id}`,
+    )
+    const itemWithSafeEndTime = endTime === item.endTime ? item : { ...item, endTime }
+    const optimisticTrip = moveItemToBackupInTrip(previousTrip, itemWithSafeEndTime, type)
     setSaveError(null)
+    setIsSaving(true)
+    latestTripRef.current = optimisticTrip
+    onTripUpdated(optimisticTrip)
 
     try {
-      if (type === "meal") {
-        const savedMeal = await updateMeal(accessToken, trip.id, item.id, { isBackup: true })
-        onTripUpdated(replaceMealInTrip(trip, savedMeal))
-      } else {
-        const savedActivity = await updateActivity(accessToken, trip.id, item.id, {
-          isBackup: true,
-        })
-        onTripUpdated({
-          ...trip,
-          backupActivities: [...trip.backupActivities, savedActivity],
-          days: trip.days.map((day) => ({
-            ...day,
-            activities: day.activities.filter((activity) => activity.id !== item.id),
-          })),
-        })
-      }
+      const saved =
+        type === "meal"
+          ? await updateMeal(accessToken, previousTrip.id, item.id, { isBackup: true, endTime })
+          : await updateActivity(accessToken, previousTrip.id, item.id, { isBackup: true, endTime })
+      const reconciledTrip =
+        type === "meal"
+          ? replaceMealInTrip(latestTripRef.current, saved)
+          : replaceActivityInTrip(latestTripRef.current, saved)
+      latestTripRef.current = reconciledTrip
+      onTripUpdated(reconciledTrip)
     } catch (reason: unknown) {
+      latestTripRef.current = previousTrip
+      onTripUpdated(previousTrip)
       setSaveError(getErrorMessage(reason))
     } finally {
       setIsSaving(false)

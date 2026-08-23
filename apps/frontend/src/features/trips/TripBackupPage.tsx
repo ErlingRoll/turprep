@@ -47,7 +47,14 @@ import {
 } from "./spreadsheet-reorder"
 import { getSpreadsheetItemDraft } from "./spreadsheet-item-draft"
 import {
+  moveItemToPlanInTrip,
+  replaceActivityInTrip,
+  replaceHousingStayInTrip,
+  replaceMealInTrip,
+} from "./trip-state"
+import {
   applyDefaultEndTimeForStartEdit,
+  getCollisionSafeEndTime,
   getDefaultEndTimeForStart,
   getRowsForTimeEdit,
   getTimeOrderValidationError,
@@ -89,6 +96,17 @@ type TripBackupPageProps = {
   onReorderPendingChange: (isPending: boolean) => void
   daySelection: TripDaySelection
   showDetails: boolean
+}
+
+function getPlannedRows(trip: TripDetail, date: string): ItineraryRow[] {
+  const day = trip.days.find((currentDay) => currentDay.date === date)
+  const meals = trip.meals.filter((meal) => !meal.isBackup && meal.tripDate === date)
+  const activityIds = new Set(day?.activities.map((activity) => activity.id))
+
+  return sortDayItems([...(day?.activities ?? []), ...meals]).map((item) => ({
+    item,
+    type: activityIds.has(item.id) ? "activity" : "meal",
+  }))
 }
 
 export function TripBackupPage({
@@ -466,12 +484,29 @@ export function TripBackupPage({
             })
         onTripUpdated(updateTripItem(trip, saved, formType))
       } else {
+        const targetRows = tentativeDate
+          ? activating
+            ? getPlannedRows(trip, tentativeDate)
+            : getBackupPlannerRows(trip, tentativeDate)
+          : []
+        const rowKey =
+          editingId && (formType === "activity" || formType === "meal")
+            ? `${formType}:${editingId}`
+            : null
+        const resolvedEndTime = allDay
+          ? null
+          : getCollisionSafeEndTime(
+              targetRows,
+              startTime || null,
+              endTime || null,
+              rowKey,
+            )
         const input = {
           tripDate: tentativeDate || null,
           isBackup,
           title: title.trim() || null,
           startTime: allDay || !startTime ? null : startTime,
-          endTime: allDay || !endTime ? null : endTime,
+          endTime: resolvedEndTime,
           allDay,
           notes,
           googleMapsUrl: normalizedGoogleMapsUrl || null,
@@ -536,17 +571,54 @@ export function TripBackupPage({
       return
     }
 
+    const previousTrip = latestTripRef.current
+    const targetRows =
+      type !== "housing" && (item as Activity | Meal).tripDate
+        ? getPlannedRows(previousTrip, (item as Activity | Meal).tripDate as string)
+        : []
+    const dayItem = item as Activity | Meal
+    const endTime = getCollisionSafeEndTime(
+      targetRows,
+      dayItem.startTime,
+      dayItem.endTime,
+      `${type}:${item.id}`,
+    )
+    const itemWithSafeEndTime =
+      type === "housing" || endTime === dayItem.endTime ? item : { ...dayItem, endTime }
+    const optimisticTrip = moveItemToPlanInTrip(previousTrip, itemWithSafeEndTime, type)
     setFormError(null)
+    setIsSaving(true)
+    latestTripRef.current = optimisticTrip
+    onTripUpdated(optimisticTrip)
+
     try {
-      const saved =
-        type === "activity"
-          ? await updateActivity(accessToken, trip.id, item.id, { isBackup: false })
-          : type === "meal"
-            ? await updateMeal(accessToken, trip.id, item.id, { isBackup: false })
-            : await updateHousingStay(accessToken, trip.id, item.id, { isBackup: false })
-      onTripUpdated(updateTripItem(trip, saved, type))
+      let reconciledTrip: TripDetail
+      if (type === "activity") {
+        const savedActivity = await updateActivity(accessToken, previousTrip.id, item.id, {
+          isBackup: false,
+          endTime,
+        })
+        reconciledTrip = replaceActivityInTrip(latestTripRef.current, savedActivity)
+      } else if (type === "meal") {
+        const savedMeal = await updateMeal(accessToken, previousTrip.id, item.id, {
+          isBackup: false,
+          endTime,
+        })
+        reconciledTrip = replaceMealInTrip(latestTripRef.current, savedMeal)
+      } else {
+        const savedHousingStay = await updateHousingStay(accessToken, previousTrip.id, item.id, {
+          isBackup: false,
+        })
+        reconciledTrip = replaceHousingStayInTrip(latestTripRef.current, savedHousingStay)
+      }
+      latestTripRef.current = reconciledTrip
+      onTripUpdated(reconciledTrip)
     } catch (reason: unknown) {
+      latestTripRef.current = previousTrip
+      onTripUpdated(previousTrip)
       setFormError(getErrorMessage(reason))
+    } finally {
+      setIsSaving(false)
     }
   }
 
