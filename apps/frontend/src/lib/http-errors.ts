@@ -2,14 +2,21 @@ import { storageKeys } from "./brand"
 
 const httpErrorEventName = storageKeys.httpErrorEvent
 
+type HttpValidationIssue = {
+  message?: string
+  path?: Array<string | number>
+}
+
 export class HttpError extends Error {
   readonly status: number
+  readonly issues: HttpValidationIssue[] | null
   toastHandled = false
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, issues: HttpValidationIssue[] | null = null) {
     super(message)
     this.name = "HttpError"
     this.status = status
+    this.issues = issues
   }
 }
 

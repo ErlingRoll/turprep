@@ -24,6 +24,7 @@ import { MobileMenuButton } from "../../components/MobileMenuButton"
 import { GoogleMapsLinkButton } from "../../components/GoogleMapsLinkButton"
 import { ItemDetailsEditor } from "../../components/ItemDetails"
 import { TripItemPreference } from "../../components/TripItemPreference"
+import { useToast } from "../../components/ToastContext"
 import type { ItemDetailValues } from "../../components/ItemDetails"
 import { getErrorMessage, isGoogleMapsError } from "../../lib/errors"
 import { getDefaultCurrency } from "../../lib/currency"
@@ -40,6 +41,12 @@ import {
   setSpreadsheetDragData,
 } from "./spreadsheet-drag"
 import { getSpreadsheetItemDraft } from "./spreadsheet-item-draft"
+import {
+  applyDefaultEndTimeForStartEdit,
+  getDefaultEndTimeForStart,
+  getRowsForTimeEdit,
+  getTimeOrderValidationError,
+} from "./spreadsheet-time-validation"
 import { SpreadsheetItineraryRow } from "./SpreadsheetItineraryRow"
 import { TripDayNavigator } from "./TripDayNavigator"
 import type {
@@ -81,6 +88,7 @@ export function TripBackupPage({
   showDetails,
 }: TripBackupPageProps) {
   const { t } = useTranslation()
+  const { addToast } = useToast()
   const currencies =
     trip.acceptedCurrencies.length > 0 ? trip.acceptedCurrencies : [getDefaultCurrency()]
   const [selectedType, setSelectedType] = useState<BackupType>("activity")
@@ -298,16 +306,26 @@ export function TripBackupPage({
 
   function handleStartTimeChange(value: string) {
     setStartTime(value)
-    if (value && !endTime) {
-      setEndTime(value)
+    if (!value) {
+      setAllDay(true)
+      setEndTime("")
+      return
+    }
+
+    setAllDay(false)
+    if (!endTime) {
+      const rows = tentativeDate
+        ? desktopBackupGroups.find((group) => group.date === tentativeDate)?.rows ?? []
+        : []
+      const rowKey = editingId && (formType === "activity" || formType === "meal")
+        ? `${formType}:${editingId}`
+        : null
+      setEndTime(getDefaultEndTimeForStart(rows, value, rowKey) ?? "")
     }
   }
 
   function handleEndTimeChange(value: string) {
     setEndTime(value)
-    if (value && !startTime) {
-      setStartTime(value)
-    }
   }
 
   function addPlannedActivity(currentTrip: TripDetail, activity: Activity): TripDetail {
@@ -555,10 +573,6 @@ export function TripBackupPage({
   }
 
   function startDesktopEditing(type: BackupPlannerType, item: Activity | Meal, field: EditableField) {
-    if (isSaving) {
-      return
-    }
-
     setDesktopEditingFieldKey(`${type}:${item.id}:${field}`)
     setDesktopDraft(getSpreadsheetItemDraft(item))
     setDesktopSaveError(null)
@@ -578,25 +592,114 @@ export function TripBackupPage({
     type: BackupPlannerType,
     item: Activity | Meal,
     field: EditableField,
+    nextDraft?: ItemDraft,
   ) {
-    if (!desktopDraft || desktopEditingFieldKey !== `${type}:${item.id}:${field}`) {
+    if (desktopEditingFieldKey !== `${type}:${item.id}:${field}`) {
+      return
+    }
+    const currentDraft = nextDraft ?? desktopDraft
+    if (!currentDraft) {
+      return
+    }
+
+    setDesktopSaveError(null)
+    let resolvedDraft = currentDraft
+
+    const input =
+      field === "title"
+        ? { title: currentDraft.title.trim() || null }
+        : field === "notes"
+          ? { notes: currentDraft.notes.trim() || null }
+          : {
+              allDay: currentDraft.allDay,
+              endTime: currentDraft.allDay ? null : currentDraft.endTime || null,
+              startTime: currentDraft.allDay ? null : currentDraft.startTime || null,
+            }
+
+    if (field === "startTime" || field === "endTime") {
+      const rowKey = `${type}:${item.id}`
+      let editedRows: BackupPlannerRow[] | null = null
+      const dayGroup = desktopBackupGroups.find((group) =>
+        group.rows.some((row) => getItineraryRowKey(row) === rowKey),
+      )
+      if (dayGroup) {
+        const dayRows = dayGroup.rows
+        if (field === "startTime") {
+          resolvedDraft = applyDefaultEndTimeForStartEdit(dayRows, rowKey, resolvedDraft)
+        }
+        editedRows = getRowsForTimeEdit(dayRows, rowKey, resolvedDraft)
+
+        const timeOrderError = getTimeOrderValidationError(dayRows, rowKey, resolvedDraft)
+        if (timeOrderError) {
+          addToast(t(timeOrderError))
+          setDesktopEditingFieldKey(null)
+          setDesktopDraft(null)
+          return
+        }
+      }
+
+      setIsSaving(true)
+      if (!dayGroup || !editedRows) {
+        setIsSaving(false)
+        return
+      }
+
+      const optimisticItem = {
+        ...item,
+        allDay: resolvedDraft.allDay,
+        endTime: resolvedDraft.allDay ? null : resolvedDraft.endTime || null,
+        startTime: resolvedDraft.allDay ? null : resolvedDraft.startTime || null,
+      }
+      const optimisticRows = editedRows.map((row) =>
+        getItineraryRowKey(row) === rowKey ? { ...row, item: optimisticItem } : row,
+      )
+      const optimisticTrip = getOptimisticBackupTrip(
+        trip,
+        new Map([[dayGroup.id, optimisticRows]]),
+      )
+      onTripUpdated(optimisticTrip)
+      setDesktopEditingFieldKey(null)
+      setDesktopDraft(null)
+
+      try {
+        await Promise.all(
+          optimisticRows.map((row, sortOrder) => {
+            const baseInput = {
+              sortOrder,
+            }
+            if (getItineraryRowKey(row) !== rowKey) {
+              return row.type === "meal"
+                ? updateMeal(accessToken, trip.id, row.item.id, baseInput)
+                : updateActivity(accessToken, trip.id, row.item.id, baseInput)
+            }
+
+            const editedInput = {
+              ...baseInput,
+              allDay: resolvedDraft.allDay,
+              endTime: resolvedDraft.allDay ? null : resolvedDraft.endTime || null,
+              startTime: resolvedDraft.allDay ? null : resolvedDraft.startTime || null,
+            }
+            return row.type === "meal"
+              ? updateMeal(accessToken, trip.id, row.item.id, editedInput)
+              : updateActivity(accessToken, trip.id, row.item.id, editedInput)
+          }),
+        )
+      } catch (reason: unknown) {
+        const message = getErrorMessage(reason)
+        onTripUpdated(trip)
+        addToast(message)
+        window.setTimeout(() => {
+          setDesktopEditingFieldKey(`${type}:${item.id}:${field}`)
+          setDesktopDraft(resolvedDraft)
+        }, 0)
+      } finally {
+        setIsSaving(false)
+      }
+
       return
     }
 
     setIsSaving(true)
-    setDesktopSaveError(null)
-
-    const input =
-      field === "title"
-        ? { title: desktopDraft.title.trim() || null }
-        : field === "notes"
-          ? { notes: desktopDraft.notes.trim() || null }
-          : {
-              allDay: desktopDraft.allDay,
-              endTime: desktopDraft.allDay ? null : desktopDraft.endTime || null,
-              startTime: desktopDraft.allDay ? null : desktopDraft.startTime || null,
-            }
-
     try {
       const saved =
         type === "meal"
@@ -765,11 +868,14 @@ export function TripBackupPage({
                     onChange={handleStartTimeChange}
                     value={startTime}
                   />
-                  <TimePicker
-                    label={t("common.to")}
-                    onChange={handleEndTimeChange}
-                    value={endTime}
-                  />
+                  {startTime && (
+                    <TimePicker
+                      label={t("common.to")}
+                      onChange={handleEndTimeChange}
+                      showLabel={false}
+                      value={endTime}
+                    />
+                  )}
                 </div>
               )}
             </>
@@ -1379,9 +1485,13 @@ export function TripBackupPage({
                                 const activeField = desktopEditingFieldKey?.startsWith(`${key}:`)
                                   ? (desktopEditingFieldKey.slice(key.length + 1) as EditableField)
                                   : null
+                                  const defaultEndTimeForStart =
+                                    activeField === "startTime" && desktopDraft && !desktopDraft.endTime
+                                      ? getDefaultEndTimeForStart(group.rows, desktopDraft.startTime, key)
+                                      : null
 
-                                return (
-                                  <SpreadsheetItineraryRow
+                                  return (
+                                    <SpreadsheetItineraryRow
                                     key={key}
                                     activeField={activeField}
                                     dateLabel={displayedDate}
@@ -1398,14 +1508,15 @@ export function TripBackupPage({
                                     onDragOver={handleDesktopDragOver}
                                     onDragStart={handleDesktopDragStart}
                                     onDrop={handleDesktopDrop}
+                                    defaultEndTimeForStart={defaultEndTimeForStart}
                                     onMoveToBackup={(rowType, rowItem) => {
                                       void moveToPlan({ item: rowItem, type: rowType })
                                     }}
                                     onPreferenceChange={(itemType, itemId, value) => {
                                       void handlePreferenceChange(itemType, itemId, value)
                                     }}
-                                    onSaveField={(rowType, rowItem, field) => {
-                                      void saveDesktopEditingField(rowType, rowItem, field)
+                                    onSaveField={(rowType, rowItem, field, nextDraft) => {
+                                      void saveDesktopEditingField(rowType, rowItem, field, nextDraft)
                                     }}
                                     onSaveGoogleMapsUrl={saveBackupItemGoogleMapsUrl}
                                     onSetPendingDeletion={(deletion) => setPendingDeletion(deletion)}

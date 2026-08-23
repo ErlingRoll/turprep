@@ -20,6 +20,13 @@ const errorTranslations: Record<string, string> = {
   "Google Places is not configured": "errors.googlePlacesUnavailable",
 }
 
+const validationIssueTranslations: Record<string, string> = {
+  "An activity title or Google Maps link is required": "errors.activityTitleOrGoogleMapsRequired",
+  "A planned activity must have a date": "errors.activityOutsideTrip",
+  "End time must be on or after start time": "spreadsheet.endBeforeStartError",
+  "A price amount and currency must be provided together": "errors.priceAmountCurrencyPairRequired",
+}
+
 const googleMapsErrorMessages = new Set([
   "Google Maps link is invalid",
   "Could not resolve Google Maps link",
@@ -39,6 +46,20 @@ export function getErrorMessage(reason: unknown) {
   }
 
   const translationKey = errorTranslations[reason.message]
+
+  if (reason instanceof HttpError && reason.issues?.length) {
+    const firstIssue = reason.issues[0]
+    if (firstIssue?.message) {
+      const issueTranslationKey = validationIssueTranslations[firstIssue.message]
+      if (issueTranslationKey) {
+        return i18n.t(issueTranslationKey)
+      }
+
+      if (import.meta.env.DEV) {
+        return firstIssue.message
+      }
+    }
+  }
 
   if (!translationKey) {
     if (import.meta.env.DEV && reason instanceof HttpError) {

@@ -226,13 +226,35 @@ button:disabled {
   border-left: 0.25rem solid var(--color-type-housing);
 }
 
-@media (min-width: 640px) {
-  .time-picker-popover {
-    bottom: auto;
-    left: var(--picker-left);
-    position: absolute;
-    right: auto;
-    top: var(--picker-top);
-    width: var(--picker-width);
+.time-picker-popover {
+  bottom: auto;
+  left: var(--picker-left);
+  right: auto;
+  top: var(--picker-top);
+  width: var(--picker-width);
+}
+
+.toast-dismiss-progress {
+  animation: toast-dismiss-progress 7s linear forwards;
+  background: var(--color-error-strong);
+  bottom: 0;
+  height: 0.25rem;
+  left: 0;
+  position: absolute;
+  right: 0;
+  transform-origin: left;
+}
+
+.toast-error:hover .toast-dismiss-progress {
+  animation-play-state: paused;
+}
+
+@keyframes toast-dismiss-progress {
+  from {
+    transform: scaleX(1);
+  }
+
+  to {
+    transform: scaleX(0);
   }
 }

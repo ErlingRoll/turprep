@@ -41,6 +41,7 @@ type SpreadsheetItineraryRowProps = {
     type: ItineraryRow["type"],
     item: Activity | Meal,
     field: EditableField,
+    nextDraft?: ItemDraft,
   ) => void
   onCancelEditing: () => void
   onSetPendingDeletion: (deletion: {
@@ -68,6 +69,7 @@ type SpreadsheetItineraryRowProps = {
   onDragOver: (event: DragEvent<HTMLTableRowElement>, dayDate: string) => void
   onDragEnd: () => void
   onDrop: (event: DragEvent<HTMLTableRowElement>) => Promise<void>
+  defaultEndTimeForStart?: string | null
 }
 
 export function SpreadsheetItineraryRow({
@@ -101,9 +103,13 @@ export function SpreadsheetItineraryRow({
   onDragOver,
   onDragEnd,
   onDrop,
+  defaultEndTimeForStart,
 }: SpreadsheetItineraryRowProps) {
   const { t } = useTranslation()
   const innerColumnCount = 5 + (showPrice ? 2 : 0) + (showWebsite ? 1 : 0)
+  const timeValue = item.startTime ?? item.endTime ?? ""
+  const isWholeDay = timeValue === ""
+  const timeDisplay = isWholeDay ? t("spreadsheet.allDay") : timeValue
 
   function renderActions(field: EditableField) {
     return (
@@ -129,6 +135,23 @@ export function SpreadsheetItineraryRow({
         )}
       </div>
     )
+  }
+
+  function updateDraftAndSave(
+    field: "startTime" | "endTime",
+    update: (current: ItemDraft) => ItemDraft,
+  ) {
+    if (!draft) {
+      return
+    }
+
+    let nextDraft = update(draft)
+    if (field === "startTime" && nextDraft.startTime && !nextDraft.endTime && defaultEndTimeForStart) {
+      nextDraft = { ...nextDraft, endTime: defaultEndTimeForStart }
+    }
+
+    onUpdateDraft(nextDraft)
+    void onSaveField(type, item, field, nextDraft)
   }
 
   return (
@@ -200,37 +223,28 @@ export function SpreadsheetItineraryRow({
                 <SpreadsheetCell className="border-b-0">
                   {activeField === "startTime" && draft ? (
                     <>
-                      <label className="flex items-center gap-1 text-xs text-muted">
-                        <input
-                          checked={draft.allDay}
-                          onChange={(event) =>
-                            onUpdateDraft((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    allDay: event.target.checked,
-                                  }
-                                : current,
-                            )
+                      <TimePicker
+                        autoOpen
+                        label={t("spreadsheet.start")}
+                        onClose={(reason) => {
+                          if (reason === "dismiss") {
+                            onCancelEditing()
                           }
-                          type="checkbox"
-                        />
-                        {t("spreadsheet.allDay")}
-                      </label>
-                      {!draft.allDay && (
-                        <div className="mt-2">
-                          <TimePicker
-                            label={t("spreadsheet.start")}
-                            onChange={(value) =>
-                              onUpdateDraft((current) =>
-                                current ? { ...current, startTime: value } : current,
-                              )
-                            }
-                            value={draft.startTime}
-                          />
-                        </div>
+                        }}
+                        onChange={(value) =>
+                          updateDraftAndSave("startTime", (current) => ({
+                            ...current,
+                            allDay: value === "",
+                            endTime: value === "" ? "" : current.endTime,
+                            startTime: value,
+                          }))
+                        }
+                        showLabel={false}
+                        value={draft.startTime}
+                      />
+                      {saveError && (
+                        <p className="mt-2 text-xs text-error">{saveError}</p>
                       )}
-                      {renderActions("startTime")}
                     </>
                   ) : (
                     <button
@@ -238,7 +252,7 @@ export function SpreadsheetItineraryRow({
                       onClick={() => onStartEditing(type, item, "startTime")}
                       type="button"
                     >
-                      {item.allDay ? t("spreadsheet.allDay") : item.startTime}
+                      {timeDisplay}
                     </button>
                   )}
                 </SpreadsheetCell>
@@ -247,25 +261,37 @@ export function SpreadsheetItineraryRow({
                     <>
                       {!draft.allDay && (
                         <TimePicker
+                          autoOpen
                           label={t("spreadsheet.end")}
+                          onClose={(reason) => {
+                            if (reason === "dismiss") {
+                              onCancelEditing()
+                            }
+                          }}
+                          showLabel={false}
                           onChange={(value) =>
-                            onUpdateDraft((current) =>
-                              current ? { ...current, endTime: value } : current,
-                            )
+                            updateDraftAndSave("endTime", (current) => ({
+                              ...current,
+                              endTime: value,
+                            }))
                           }
                           value={draft.endTime}
                         />
                       )}
-                      {renderActions("endTime")}
+                      {saveError && (
+                        <p className="mt-2 text-xs text-error">{saveError}</p>
+                      )}
                     </>
                   ) : (
-                    <button
-                      className="w-full cursor-text text-left transition hover:text-brand"
-                      onClick={() => onStartEditing(type, item, "endTime")}
-                      type="button"
-                    >
-                      {item.allDay ? t("spreadsheet.allDay") : item.endTime}
-                    </button>
+                    isWholeDay ? null : (
+                      <button
+                        className="w-full cursor-text text-left transition hover:text-brand"
+                        onClick={() => onStartEditing(type, item, "endTime")}
+                        type="button"
+                      >
+                        {item.endTime}
+                      </button>
+                    )
                   )}
                 </SpreadsheetCell>
                 {showPrice && (

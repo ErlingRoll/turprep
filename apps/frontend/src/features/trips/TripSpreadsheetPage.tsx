@@ -49,6 +49,12 @@ import {
 import { SpreadsheetHousingContent } from "./SpreadsheetHousingContent"
 import { SpreadsheetItineraryRow } from "./SpreadsheetItineraryRow"
 import { getSpreadsheetItemDraft } from "./spreadsheet-item-draft"
+import {
+  applyDefaultEndTimeForStartEdit,
+  getDefaultEndTimeForStart,
+  getRowsForTimeEdit,
+  getTimeOrderValidationError,
+} from "./spreadsheet-time-validation"
 import type {
   EditableField,
   HousingDraft,
@@ -378,6 +384,7 @@ export function TripSpreadsheetPage({
   }
 
   function renderCreateItemForm(dayDate: string) {
+    const dayRows = getItineraryRows(trip, dayDate)
     return (
       <>
         <DayItemForm
@@ -404,7 +411,22 @@ export function TripSpreadsheetPage({
           onNotesChange={(notes) => setCreateDraft((current) => ({ ...current, notes }))}
           onSelectItemType={setCreatingItemType}
           onStartTimeChange={(startTime) =>
-            setCreateDraft((current) => ({ ...current, startTime }))
+            setCreateDraft((current) => {
+              if (!startTime) {
+                return { ...current, allDay: true, endTime: "", startTime }
+              }
+
+              const defaultEndTime = current.endTime
+                ? current.endTime
+                : getDefaultEndTimeForStart(dayRows, startTime)
+
+              return {
+                ...current,
+                allDay: false,
+                endTime: defaultEndTime ?? "",
+                startTime,
+              }
+            })
           }
           onSubmit={(event) => void saveNewItem(event, dayDate)}
           onTitleChange={(title) => setCreateDraft((current) => ({ ...current, title }))}
@@ -489,7 +511,6 @@ export function TripSpreadsheetPage({
     item: Activity | Meal,
     googleMapsUrl: string | null,
   ): Promise<string | null> {
-    setIsSaving(true)
     setSaveError(null)
 
     try {
@@ -510,7 +531,6 @@ export function TripSpreadsheetPage({
   }
 
   async function moveItemToBackup(type: ItineraryRow["type"], item: Activity | Meal) {
-    setIsSaving(true)
     setSaveError(null)
 
     try {
@@ -929,10 +949,6 @@ export function TripSpreadsheetPage({
   }
 
   function startEditing(type: ItineraryRow["type"], item: Activity | Meal, field: EditableField) {
-    if (isSaving) {
-      return
-    }
-
     setEditingFieldKey(`${type}:${item.id}:${field}`)
     setDraft(getSpreadsheetItemDraft(item))
     setSaveError(null)
@@ -1183,25 +1199,117 @@ export function TripSpreadsheetPage({
     type: ItineraryRow["type"],
     item: Activity | Meal,
     field: EditableField,
+    nextDraft?: ItemDraft,
   ) {
-    if (!draft || editingFieldKey !== `${type}:${item.id}:${field}`) {
+    if (editingFieldKey !== `${type}:${item.id}:${field}`) {
+      return
+    }
+    const currentDraft = nextDraft ?? draft
+    if (!currentDraft) {
+      return
+    }
+
+    setSaveError(null)
+    let resolvedDraft = currentDraft
+
+    const input =
+      field === "title"
+        ? { title: currentDraft.title.trim() || null }
+        : field === "notes"
+          ? { notes: currentDraft.notes.trim() || null }
+          : {
+              allDay: currentDraft.allDay,
+              endTime: currentDraft.allDay ? null : currentDraft.endTime || null,
+              startTime: currentDraft.allDay ? null : currentDraft.startTime || null,
+            }
+
+    if (field === "startTime" || field === "endTime") {
+      const rowKey = `${type}:${item.id}`
+      let editedRows: ItineraryRow[] | null = null
+      const dayDate =
+        item.tripDate ??
+        trip.days.find((day) => getItineraryRows(trip, day.date).some((row) => getItineraryRowKey(row) === rowKey))
+          ?.date
+      if (dayDate) {
+        const dayRows = getItineraryRows(trip, dayDate)
+        if (field === "startTime") {
+          resolvedDraft = applyDefaultEndTimeForStartEdit(dayRows, rowKey, resolvedDraft)
+        }
+        editedRows = getRowsForTimeEdit(dayRows, rowKey, resolvedDraft)
+
+        const timeOrderError = getTimeOrderValidationError(dayRows, rowKey, resolvedDraft)
+        if (timeOrderError) {
+          addToast(t(timeOrderError))
+          setEditingFieldKey(null)
+          setDraft(null)
+          return
+        }
+      }
+
+      setIsSaving(true)
+      if (!dayDate || !editedRows) {
+        setIsSaving(false)
+        return
+      }
+
+      const optimisticItem = {
+        ...item,
+        allDay: resolvedDraft.allDay,
+        endTime: resolvedDraft.allDay ? null : resolvedDraft.endTime || null,
+        startTime: resolvedDraft.allDay ? null : resolvedDraft.startTime || null,
+      }
+      const optimisticRows = editedRows.map((row) =>
+        getItineraryRowKey(row) === rowKey ? { ...row, item: optimisticItem } : row,
+      )
+      const optimisticTrip = getOptimisticReorderedTrip(
+        trip,
+        new Map([[dayDate, optimisticRows]]),
+        new Map(),
+      )
+
+      onTripUpdated(optimisticTrip)
+      setEditingFieldKey(null)
+      setDraft(null)
+
+      try {
+        await Promise.all(
+          optimisticRows.map((row, sortOrder) => {
+            const baseInput = {
+              sortOrder,
+            }
+            if (getItineraryRowKey(row) !== rowKey) {
+              return row.type === "meal"
+                ? updateMeal(accessToken, trip.id, row.item.id, baseInput)
+                : updateActivity(accessToken, trip.id, row.item.id, baseInput)
+            }
+
+            const editedInput = {
+              ...baseInput,
+              allDay: resolvedDraft.allDay,
+              endTime: resolvedDraft.allDay ? null : resolvedDraft.endTime || null,
+              startTime: resolvedDraft.allDay ? null : resolvedDraft.startTime || null,
+            }
+            return row.type === "meal"
+              ? updateMeal(accessToken, trip.id, row.item.id, editedInput)
+              : updateActivity(accessToken, trip.id, row.item.id, editedInput)
+          }),
+        )
+      } catch (reason: unknown) {
+        const message = getErrorMessage(reason)
+        onTripUpdated(trip)
+        addToast(message)
+        window.setTimeout(() => {
+          setEditingFieldKey(`${type}:${item.id}:${field}`)
+          setDraft(resolvedDraft)
+        }, 0)
+      } finally {
+        setIsSaving(false)
+      }
+
       return
     }
 
     setIsSaving(true)
-    setSaveError(null)
-
-    const input =
-      field === "title"
-        ? { title: draft.title.trim() || null }
-        : field === "notes"
-          ? { notes: draft.notes.trim() || null }
-          : {
-              allDay: draft.allDay,
-              endTime: draft.allDay ? null : draft.endTime || null,
-              startTime: draft.allDay ? null : draft.startTime || null,
-            }
-
     try {
       if (type === "meal") {
         const savedMeal = await updateMeal(accessToken, trip.id, item.id, input)
@@ -1470,6 +1578,10 @@ export function TripSpreadsheetPage({
                           const activeField = editingFieldKey?.startsWith(`${itemKey}:`)
                             ? (editingFieldKey.slice(itemKey.length + 1) as EditableField)
                             : null
+                          const defaultEndTimeForStart =
+                            activeField === "startTime" && draft && !draft.endTime
+                              ? getDefaultEndTimeForStart(rows, draft.startTime, itemKey)
+                              : null
 
                           return (
                             <SpreadsheetItineraryRow
@@ -1491,8 +1603,8 @@ export function TripSpreadsheetPage({
                               itineraryColumnCount={itineraryColumnCount}
                               onStartEditing={startEditing}
                               onUpdateDraft={setDraft}
-                              onSaveField={(type, item, field) =>
-                                void saveEditingField(type, item, field)
+                              onSaveField={(type, item, field, nextDraft) =>
+                                void saveEditingField(type, item, field, nextDraft)
                               }
                               onCancelEditing={cancelEditing}
                               onSetPendingDeletion={(deletion) => setPendingDeletion(deletion)}
@@ -1506,6 +1618,7 @@ export function TripSpreadsheetPage({
                               onDragOver={handleSpreadsheetDragOver}
                               onDragEnd={handleSpreadsheetDragEnd}
                               onDrop={handleSpreadsheetDrop}
+                              defaultEndTimeForStart={defaultEndTimeForStart}
                             />
                           )
                         })

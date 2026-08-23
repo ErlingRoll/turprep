@@ -7,6 +7,9 @@ type TimePickerProps = {
   label: string
   value: string
   onChange: (value: string) => void
+  autoOpen?: boolean
+  showLabel?: boolean
+  onClose?: (reason: "commit" | "dismiss") => void
 }
 
 type TimeParts = {
@@ -51,9 +54,17 @@ function formatTime(hours: number, minutes: number) {
 const minutePresets = [0, 15, 30, 45]
 const hourPresets = Array.from({ length: 24 }, (_, hour) => hour)
 
-export function TimePicker({ label, value, onChange }: TimePickerProps) {
+export function TimePicker({
+  label,
+  value,
+  onChange,
+  autoOpen = false,
+  showLabel = true,
+  onClose,
+}: TimePickerProps) {
   const { i18n, t } = useTranslation()
   const containerRef = useRef<HTMLDivElement>(null)
+  const hasAutoOpenedRef = useRef(false)
   const [isOpen, setIsOpen] = useState(false)
   const [popoverPosition, setPopoverPosition] = useState<PickerPosition | null>(null)
   const [draftHourInput, setDraftHourInput] = useState(
@@ -79,15 +90,18 @@ export function TimePicker({ label, value, onChange }: TimePickerProps) {
     setDraftHourInput(time ? String(time.hours).padStart(2, "0") : "")
     setDraftMinuteInput(time ? String(time.minutes).padStart(2, "0") : "")
     setIsOpen(false)
-  }, [value])
+    onClose?.("dismiss")
+  }, [onClose, value])
 
   useEffect(() => {
     if (!isOpen) {
       return
     }
 
+    let animationFrameId: number | null = null
+
     function updatePopoverPosition() {
-      setPopoverPosition(getPickerPosition(containerRef.current))
+      setPopoverPosition(getPickerPosition(containerRef.current, "fixed"))
     }
 
     function handlePointerDown(event: PointerEvent) {
@@ -96,7 +110,7 @@ export function TimePicker({ label, value, onChange }: TimePickerProps) {
         containerRef.current &&
         !containerRef.current.contains(event.target)
       ) {
-        setIsOpen(false)
+        cancelPicker()
       }
     }
 
@@ -110,8 +124,12 @@ export function TimePicker({ label, value, onChange }: TimePickerProps) {
     document.addEventListener("keydown", handleKeyDown)
     window.addEventListener("resize", updatePopoverPosition)
     window.addEventListener("scroll", updatePopoverPosition, true)
+    animationFrameId = window.requestAnimationFrame(updatePopoverPosition)
 
     return () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId)
+      }
       document.removeEventListener("pointerdown", handlePointerDown)
       document.removeEventListener("keydown", handleKeyDown)
       window.removeEventListener("resize", updatePopoverPosition)
@@ -125,6 +143,17 @@ export function TimePicker({ label, value, onChange }: TimePickerProps) {
     }
   }, [isOpen])
 
+  useEffect(() => {
+    if (!autoOpen || hasAutoOpenedRef.current) {
+      return
+    }
+
+    hasAutoOpenedRef.current = true
+    setDraftFromValue(value)
+    setPopoverPosition(getPickerPosition(containerRef.current, "fixed"))
+    setIsOpen(true)
+  }, [autoOpen, value])
+
   function setDraftFromValue(nextValue: string) {
     const time = parseTime(nextValue)
     setDraftHourInput(time ? String(time.hours).padStart(2, "0") : "")
@@ -133,7 +162,7 @@ export function TimePicker({ label, value, onChange }: TimePickerProps) {
 
   function openPicker() {
     setDraftFromValue(value)
-    setPopoverPosition(getPickerPosition(containerRef.current))
+    setPopoverPosition(getPickerPosition(containerRef.current, "fixed"))
     setIsOpen(true)
   }
 
@@ -141,6 +170,7 @@ export function TimePicker({ label, value, onChange }: TimePickerProps) {
     setDraftFromValue("")
     onChange("")
     setIsOpen(false)
+    onClose?.("commit")
   }
 
   function savePicker() {
@@ -150,12 +180,13 @@ export function TimePicker({ label, value, onChange }: TimePickerProps) {
 
     onChange(formatTime(draftTime.hours, draftTime.minutes))
     setIsOpen(false)
+    onClose?.("commit")
   }
 
   return (
     <div className="relative" ref={containerRef}>
-      <span className="grid gap-2 text-sm font-medium text-muted">
-        {label}
+      <span className={showLabel ? "grid gap-2 text-sm font-medium text-muted" : "grid"}>
+        {showLabel && label}
         <button
           aria-expanded={isOpen}
           aria-haspopup="dialog"
@@ -199,7 +230,9 @@ export function TimePicker({ label, value, onChange }: TimePickerProps) {
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
+                {showLabel && (
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
+                )}
                 <p className="mt-1 text-3xl font-semibold tabular-nums text-brand">
                   {draftTime
                     ? formatTimeValue(formatTime(draftTime.hours, draftTime.minutes), locale)

@@ -21,9 +21,8 @@ export function ToastProvider({ children }: ToastProviderProps) {
     (message: string) => {
       const id = `toast-${++nextToastId}`
       setToasts((currentToasts) => [...currentToasts, { id, message, tone: "error" }])
-      window.setTimeout(() => dismissToast(id), 7000)
     },
-    [dismissToast],
+    [],
   )
 
   useEffect(

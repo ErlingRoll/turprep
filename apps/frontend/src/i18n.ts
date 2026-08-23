@@ -101,9 +101,13 @@ const resources = {
         price: "Pris",
         prototype: "Prototype",
         readOnlyDescription: "Rediger aktiviteter og måltider direkte i planen.",
+        endAfterNextStartError: "Sluttid kan ikke være senere enn starttiden til neste element.",
+        endBeforeStartError: "Sluttid kan ikke være tidligere enn starttid.",
         reorderTimeRangeError:
           "Kan ikke flytte elementet uten å lage en ugyldig tidsperiode på denne dagen.",
         rows: "{{count}} rader",
+        startBeforePreviousEndError:
+          "Starttid kan ikke være tidligere enn sluttiden til forrige element.",
         start: "Start",
         title: "Tittel",
         tripDates: "{{start}} – {{end}}",
@@ -209,6 +213,7 @@ const resources = {
       errors: {
         activityNotFound: "Fant ikke aktiviteten.",
         activityOutsideTrip: "Aktivitetsdatoen må være innenfor reisedatoene.",
+        activityTitleOrGoogleMapsRequired: "Aktiviteten må ha en tittel eller en Google Maps-lenke.",
         authenticationRequired: "Innlogging kreves.",
         generic: "Noe gikk galt.",
         googleMapsInvalid: "Google Maps-lenken er ugyldig.",
@@ -220,6 +225,7 @@ const resources = {
         invalidActivityData: "Ugyldige aktivitetsdata.",
         invalidAuthentication: "Innloggingen er ikke gyldig.",
         invalidTripData: "Ugyldige reisedata.",
+        priceAmountCurrencyPairRequired: "Prisbeløp og valuta må fylles ut sammen.",
         routeNotFound: "Fant ikke siden.",
         tripNotFound: "Fant ikke reisen.",
         tripTooLong: "En reise kan ikke vare lenger enn {{maxDays}} dager.",
@@ -470,8 +476,11 @@ const resources = {
         price: "Price",
         prototype: "Prototype",
         readOnlyDescription: "Edit activities and meals directly in the plan.",
+        endAfterNextStartError: "End time cannot be later than the next item's start time.",
+        endBeforeStartError: "End time cannot be earlier than start time.",
         reorderTimeRangeError: "The item cannot move without creating an invalid time range.",
         rows: "{{count}} rows",
+        startBeforePreviousEndError: "Start time cannot be earlier than the previous item's end time.",
         start: "Start",
         title: "Title",
         tripDates: "{{start}} – {{end}}",
@@ -577,6 +586,8 @@ const resources = {
       errors: {
         activityNotFound: "Activity not found.",
         activityOutsideTrip: "The activity date must be within the trip dates.",
+        activityTitleOrGoogleMapsRequired:
+          "The activity must have a title or a Google Maps link.",
         authenticationRequired: "Authentication is required.",
         generic: "Something went wrong.",
         googleMapsInvalid: "The Google Maps link is invalid.",
@@ -588,6 +599,7 @@ const resources = {
         invalidActivityData: "Invalid activity data.",
         invalidAuthentication: "The authentication is not valid.",
         invalidTripData: "Invalid trip data.",
+        priceAmountCurrencyPairRequired: "Price amount and currency must be provided together.",
         routeNotFound: "Page not found.",
         tripNotFound: "Trip not found.",
         tripTooLong: "A trip cannot be longer than {{maxDays}} days.",

@@ -112,15 +112,20 @@ async function request(path: string, accessToken: string, init?: RequestInit) {
 
   if (!response.ok) {
     let message = `API request failed (${response.status})`
+    let issues: Array<{ message?: string; path?: Array<string | number> }> | null = null
 
     try {
-      const errorBody = (await response.json()) as { message?: string }
+      const errorBody = (await response.json()) as {
+        message?: string
+        issues?: Array<{ message?: string; path?: Array<string | number> }>
+      }
       message = errorBody.message ?? message
+      issues = Array.isArray(errorBody.issues) ? errorBody.issues : null
     } catch {
       // Keep the status-based message when the server does not return JSON.
     }
 
-    const error = new HttpError(message, response.status)
+    const error = new HttpError(message, response.status, issues)
     notifyUnhandledHttpError(error)
     throw error
   }

@@ -1258,6 +1258,36 @@ test("authenticated users can update an activity", async () => {
   assert.equal(response.body.notes, "Husk billetter")
 })
 
+test("activity time updates keep Google Maps-only activities valid", async () => {
+  const googleMapsActivity: Activity = {
+    ...testActivity,
+    title: null,
+    startTime: "16:00",
+    endTime: "18:00",
+    googleMapsUrl: "https://maps.app.goo.gl/UqkAP8Bc5mx1tcVq6",
+    placeName: "Oslo Camping",
+  }
+
+  const response = await request(
+    createTestApp(undefined, testTripDetail, {
+      getActivity: async () => googleMapsActivity,
+      updateActivity: async (_userId, _accessToken, _tripId, _activityId, input) => ({
+        ...googleMapsActivity,
+        ...input,
+      }),
+    }),
+  )
+    .patch("/api/trips/trip-1/activities/activity-1")
+    .set("Authorization", "Bearer valid-token")
+    .send({
+      startTime: "15:00",
+    })
+
+  assert.equal(response.status, 200)
+  assert.equal(response.body.startTime, "15:00")
+  assert.equal(response.body.googleMapsUrl, googleMapsActivity.googleMapsUrl)
+})
+
 test("authenticated users can reorder activities in one request", async () => {
   const response = await request(createTestApp())
     .patch("/api/trips/trip-1/activities/reorder")

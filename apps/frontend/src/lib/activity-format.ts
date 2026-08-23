@@ -7,10 +7,6 @@ export function getDayItemTitle(item: Pick<DayItem, "title" | "placeName">, fall
 }
 
 export function getDayItemTime(item: Pick<DayItem, "allDay" | "startTime" | "endTime">) {
-  if (item.allDay) {
-    return null
-  }
-
   return item.startTime ?? item.endTime
 }
 
@@ -44,7 +40,7 @@ export function formatActivityTime(
   activity: Pick<Activity, "allDay" | "startTime" | "endTime">,
   labels: { allDay: string; timeNotSet: string },
 ) {
-  if (activity.allDay) {
+  if (!activity.startTime && !activity.endTime) {
     return labels.allDay
   }
   if (activity.startTime && activity.endTime) {

@@ -131,7 +131,14 @@ export function DayItemForm({
       {!allDay && (
         <div className="grid gap-3 sm:grid-cols-2">
           <TimePicker label={t("common.from")} onChange={onStartTimeChange} value={startTime} />
-          <TimePicker label={t("common.to")} onChange={onEndTimeChange} value={endTime} />
+          {startTime && (
+            <TimePicker
+              label={t("common.to")}
+              onChange={onEndTimeChange}
+              showLabel={false}
+              value={endTime}
+            />
+          )}
         </div>
       )}
       <div className="flex justify-end gap-2">
