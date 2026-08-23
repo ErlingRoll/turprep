@@ -34,8 +34,8 @@ copy apps\backend\.env.example apps\backend\.env
 ```
 
 Fill in the Supabase values, then open `http://localhost:3000`. The first
-vertical slice supports Google login, private trip creation, authenticated
-trip listing, trip settings, recoverable trip archiving, activities, and
+vertical slice supports Google and email/password login, private trip creation,
+authenticated trip listing, trip settings, recoverable trip archiving, activities, and
 generated days for each inclusive trip date. Trips, days, accommodation stays,
 meals, and activities support editable notes; days can also have titles, and
 non-empty notes appear in travel
@@ -56,8 +56,10 @@ Apply all migrations in `supabase/migrations` to the Supabase project before
 using trip persistence. Deleting a trip archives it by setting `deleted_at`;
 the row and its related data remain in the database for a future admin restore
 workflow. Archived trips are hidden from the normal user API.
-Configure Google as an OAuth provider and add `http://localhost:3000` as a
-redirect URL in Supabase Authentication.
+Configure Google as an OAuth provider, enable the Email provider, and add
+`http://localhost:3000` as a redirect URL in Supabase Authentication. Email
+login uses the email address as the username. If email confirmation is enabled,
+new users must confirm their address before signing in.
 
 Shared models belong in `packages/models/src`. Define each model's Zod schema there and derive its TypeScript type from the schema. The backend and frontend both import the package, while database/ORM-specific mappings remain backend-owned.
 
@@ -82,6 +84,9 @@ Shared models belong in `packages/models/src`. Define each model's Zod schema th
 - `VITE_GOOGLE_MAPS_API_KEY` is the browser-visible, HTTP-referrer-restricted
   key used by the Google Maps JavaScript API. Keep `GOOGLE_PLACES_API_KEY`
   backend-only.
+- `VITE_GOOGLE_MAPS_MAP_ID` is optional; configure a production map ID when
+  using custom Google Maps styling. Local development falls back to
+  `DEMO_MAP_ID`.
 - `VITE_SUPABASE_PUBLISHABLE_KEY` is browser-visible configuration, not a
   service secret. Never expose a Supabase `service_role` key through `VITE_*`
   variables or frontend code.

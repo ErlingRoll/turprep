@@ -21,13 +21,21 @@ function getAuthRedirectUrl() {
 export function LoginScreen() {
   const { t } = useTranslation()
   const [rememberSession, setRememberSession] = useState(true)
-  const [isLoading, setIsLoading] = useState(false)
+  const [authMode, setAuthMode] = useState<"signIn" | "signUp">("signIn")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [loadingAction, setLoadingAction] = useState<"google" | "password" | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [showMobileOptions, setShowMobileOptions] = useState(false)
 
+  const isLoading = loadingAction !== null
+
   async function signInWithGoogle() {
-    setIsLoading(true)
+    setLoadingAction("google")
     setError(null)
+    setNotice(null)
     setSessionPersistencePreference(rememberSession)
 
     try {
@@ -44,7 +52,56 @@ export function LoginScreen() {
       }
     } catch (reason: unknown) {
       setError(getErrorMessage(reason))
-      setIsLoading(false)
+      setLoadingAction(null)
+    }
+  }
+
+  async function submitPasswordAuth() {
+    setLoadingAction("password")
+    setError(null)
+    setNotice(null)
+
+    const normalizedEmail = email.trim()
+    if (authMode === "signUp" && password !== confirmPassword) {
+      setError(t("auth.passwordsDoNotMatch"))
+      setLoadingAction(null)
+      return
+    }
+
+    setSessionPersistencePreference(rememberSession)
+
+    try {
+      const client = getSupabaseClient(rememberSession)
+      if (authMode === "signIn") {
+        const { error: signInError } = await client.auth.signInWithPassword({
+          email: normalizedEmail,
+          password,
+        })
+
+        if (signInError) {
+          throw signInError
+        }
+      } else {
+        const { data, error: signUpError } = await client.auth.signUp({
+          email: normalizedEmail,
+          password,
+          options: {
+            emailRedirectTo: getAuthRedirectUrl(),
+          },
+        })
+
+        if (signUpError) {
+          throw signUpError
+        }
+
+        if (!data.session) {
+          setNotice(t("auth.checkEmail"))
+        }
+      }
+    } catch (reason: unknown) {
+      setError(getErrorMessage(reason))
+    } finally {
+      setLoadingAction(null)
     }
   }
 
@@ -89,6 +146,11 @@ export function LoginScreen() {
             {error}
           </p>
         )}
+        {notice && (
+          <p className="mt-6 rounded-xl border border-border-soft bg-surface-soft p-4 text-sm text-success-body">
+            {notice}
+          </p>
+        )}
 
         <button
           className="mt-8 flex w-full items-center justify-center gap-3 rounded-xl bg-brand-surface px-5 py-3.5 font-semibold text-on-brand transition hover:bg-brand-surface-hover disabled:cursor-not-allowed disabled:opacity-60"
@@ -99,7 +161,98 @@ export function LoginScreen() {
           <span className="grid size-6 place-items-center rounded-full bg-white text-sm font-bold text-google-blue">
             G
           </span>
-          {isLoading ? t("auth.openingGoogle") : t("auth.continueWithGoogle")}
+          {loadingAction === "google" ? t("auth.openingGoogle") : t("auth.continueWithGoogle")}
+        </button>
+
+        <div className="my-7 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+          <span className="h-px flex-1 bg-border-card" />
+          <span>{t("auth.or")}</span>
+          <span className="h-px flex-1 bg-border-card" />
+        </div>
+
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void submitPasswordAuth()
+          }}
+        >
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-ink" htmlFor="auth-email">
+              {t("auth.email")}
+            </label>
+            <input
+              autoComplete="username"
+              className="w-full rounded-xl border border-border-card bg-page px-4 py-3 text-ink outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+              id="auth-email"
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder={t("auth.emailPlaceholder")}
+              required
+              type="email"
+              value={email}
+            />
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-ink" htmlFor="auth-password">
+              {t("auth.password")}
+            </label>
+            <input
+              autoComplete={authMode === "signIn" ? "current-password" : "new-password"}
+              className="w-full rounded-xl border border-border-card bg-page px-4 py-3 text-ink outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+              id="auth-password"
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder={t("auth.passwordPlaceholder")}
+              required
+              type="password"
+              value={password}
+            />
+          </div>
+          {authMode === "signUp" && (
+            <div>
+              <label
+                className="mb-2 block text-sm font-semibold text-ink"
+                htmlFor="auth-confirm-password"
+              >
+                {t("auth.confirmPassword")}
+              </label>
+              <input
+                autoComplete="new-password"
+                className="w-full rounded-xl border border-border-card bg-page px-4 py-3 text-ink outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+                id="auth-confirm-password"
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                placeholder={t("auth.passwordPlaceholder")}
+                required
+                type="password"
+                value={confirmPassword}
+              />
+            </div>
+          )}
+          <button
+            className="flex w-full items-center justify-center rounded-xl border border-brand bg-transparent px-5 py-3.5 font-semibold text-brand transition hover:bg-brand/5 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={isLoading}
+            type="submit"
+          >
+            {loadingAction === "password"
+              ? authMode === "signIn"
+                ? t("auth.signingIn")
+                : t("auth.creatingAccount")
+              : authMode === "signIn"
+                ? t("auth.signInWithEmail")
+                : t("auth.createAccount")}
+          </button>
+        </form>
+
+        <button
+          className="mt-4 w-full text-sm font-semibold text-brand underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isLoading}
+          onClick={() => {
+            setAuthMode((current) => (current === "signIn" ? "signUp" : "signIn"))
+            setError(null)
+            setNotice(null)
+          }}
+          type="button"
+        >
+          {authMode === "signIn" ? t("auth.createAccountPrompt") : t("auth.signInPrompt")}
         </button>
 
         <label className="mt-5 flex items-center gap-3 text-sm text-muted">

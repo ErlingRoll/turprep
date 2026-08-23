@@ -57,6 +57,11 @@ const errorTranslations: Record<string, string> = {
   "Could not resolve Google Maps link": "errors.googleMapsResolveFailed",
   "No place found for Google Maps link": "errors.googleMapsPlaceNotFound",
   "Google Places is not configured": "errors.googlePlacesUnavailable",
+  "Invalid login credentials": "errors.invalidLoginCredentials",
+  "Email not confirmed": "errors.emailNotConfirmed",
+  "User already registered": "errors.userAlreadyRegistered",
+  "Password should be at least 6 characters": "errors.passwordTooShort",
+  "Unable to validate email address: invalid format": "errors.invalidEmail",
 }
 
 const validationIssueTranslations: Record<string, string> = {

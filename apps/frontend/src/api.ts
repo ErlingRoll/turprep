@@ -4,6 +4,8 @@ import {
   CreateHousingStayInputSchema,
   CreateMealInputSchema,
   GooglePlaceDetailsSchema,
+  GooglePlaceSuggestionsInputSchema,
+  GooglePlaceSuggestionsSchema,
   HousingStaySchema,
   MealSchema,
   TripDetailSchema,
@@ -35,6 +37,8 @@ import {
   type CreateHousingStayInput,
   type CreateMealInput,
   type GooglePlaceDetails,
+  type GooglePlaceSuggestionsInput,
+  type GooglePlaceSuggestion,
   type CreateTripInput,
   type HousingStay,
   type Meal,
@@ -64,6 +68,14 @@ import {
 } from "@turprep/models"
 import { HttpError, notifyUnhandledHttpError } from "./lib/http-errors"
 
+const googlePlaceSuggestionsCacheTtlMs = 60 * 60 * 1000
+const googlePlaceSuggestionsCache = new Map<
+  string,
+  { expiresAt: number; promise: Promise<GooglePlaceSuggestion[]> }
+>()
+const googlePlacePhotoCacheTtlMs = 60 * 60 * 1000
+const googlePlacePhotoCache = new Map<string, { expiresAt: number; promise: Promise<Blob> }>()
+
 export type {
   Activity,
   CreateActivityInput,
@@ -71,6 +83,8 @@ export type {
   CreateHousingStayInput,
   CreateMealInput,
   GooglePlaceDetails,
+  GooglePlaceSuggestionsInput,
+  GooglePlaceSuggestion,
   HousingStay,
   Meal,
   Trip,
@@ -174,11 +188,60 @@ export async function getGooglePlaceDetails(
   )
 }
 
+export async function getGooglePlaceSuggestions(
+  accessToken: string,
+  input: GooglePlaceSuggestionsInput,
+): Promise<GooglePlaceSuggestion[]> {
+  const validatedInput = GooglePlaceSuggestionsInputSchema.parse(input)
+  const cacheKey = `${accessToken}:${JSON.stringify(validatedInput)}`
+  const cached = googlePlaceSuggestionsCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.promise
+  }
+
+  const promise = request("/api/google-places/suggestions", accessToken, {
+      body: JSON.stringify(validatedInput),
+      method: "POST",
+    }).then((response) => GooglePlaceSuggestionsSchema.parse(response))
+
+  googlePlaceSuggestionsCache.set(cacheKey, {
+    expiresAt: Date.now() + googlePlaceSuggestionsCacheTtlMs,
+    promise,
+  })
+  void promise.catch(() => {
+    if (googlePlaceSuggestionsCache.get(cacheKey)?.promise === promise) {
+      googlePlaceSuggestionsCache.delete(cacheKey)
+    }
+  })
+
+  return promise
+}
+
 export async function getGooglePlacePhoto(
   accessToken: string,
   photoName: string,
 ): Promise<Blob> {
-  return requestBlob(`/api/google-places/photo?name=${encodeURIComponent(photoName)}`, accessToken)
+  const cacheKey = `${accessToken}:${photoName}`
+  const cached = googlePlacePhotoCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.promise
+  }
+
+  const promise = requestBlob(
+    `/api/google-places/photo?name=${encodeURIComponent(photoName)}`,
+    accessToken,
+  )
+  googlePlacePhotoCache.set(cacheKey, {
+    expiresAt: Date.now() + googlePlacePhotoCacheTtlMs,
+    promise,
+  })
+  void promise.catch(() => {
+    if (googlePlacePhotoCache.get(cacheKey)?.promise === promise) {
+      googlePlacePhotoCache.delete(cacheKey)
+    }
+  })
+
+  return promise
 }
 
 export async function getTrip(accessToken: string, tripId: string): Promise<TripDetail> {

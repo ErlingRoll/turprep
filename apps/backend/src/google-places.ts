@@ -225,80 +225,90 @@ async function requestGooglePlaces(
   query: string,
   locationBias: PlaceSearchLocationBias | null,
 ): Promise<ResolvedGooglePlace> {
-  let searchResponse: Response
+  const hasPlaceIdQuery = query.startsWith("place_id:")
+  let placeId = hasPlaceIdQuery ? query.slice("place_id:".length).trim() : ""
 
-  try {
-    searchResponse = await fetch("https://places.googleapis.com/v1/places:searchText", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": apiKey,
-        "X-Goog-FieldMask": "places.id",
-      },
-      body: JSON.stringify({
-        languageCode: "nb",
-        textQuery: query,
-        ...(locationBias
-          ? {
-              locationBias: {
-                circle: {
-                  center: {
-                    latitude: locationBias.latitude,
-                    longitude: locationBias.longitude,
-                  },
-                  radius: locationBias.radius,
-                },
-              },
-            }
-          : {}),
-      }),
-    })
-  } catch {
-    const fallback = getPlaceUrlFallback(query, locationBias)
-
-    if (fallback) {
-      return fallback
-    }
-
-    throw new GooglePlacesError("Could not resolve Google Maps link", 503)
-  }
-
-  if (!searchResponse.ok) {
-    const fallback = getPlaceUrlFallback(query, locationBias)
-
-    if (fallback) {
-      return fallback
-    }
-
-    throw new GooglePlacesError("Could not resolve Google Maps link")
-  }
-
-  let searchResponseBody: unknown
-
-  try {
-    searchResponseBody = await searchResponse.json()
-  } catch {
-    const fallback = getPlaceUrlFallback(query, locationBias)
-
-    if (fallback) {
-      return fallback
-    }
-
-    throw new GooglePlacesError("Could not resolve Google Maps link", 503)
-  }
-
-  const searchResult = placeSearchIdSchema.safeParse(searchResponseBody)
-  if (!searchResult.success || searchResult.data.places.length === 0) {
-    const fallback = getPlaceUrlFallback(query, locationBias)
-
-    if (fallback) {
-      return fallback
-    }
-
+  if (hasPlaceIdQuery && !/^[A-Za-z0-9_-]+$/.test(placeId)) {
     throw new GooglePlacesError("No place found for Google Maps link")
   }
 
-  const placeId = searchResult.data.places[0].id
+  if (!hasPlaceIdQuery) {
+    let searchResponse: Response
+
+    try {
+      searchResponse = await fetch("https://places.googleapis.com/v1/places:searchText", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": apiKey,
+          "X-Goog-FieldMask": "places.id",
+        },
+        body: JSON.stringify({
+          languageCode: "nb",
+          textQuery: query,
+          ...(locationBias
+            ? {
+                locationBias: {
+                  circle: {
+                    center: {
+                      latitude: locationBias.latitude,
+                      longitude: locationBias.longitude,
+                    },
+                    radius: locationBias.radius,
+                  },
+                },
+              }
+            : {}),
+        }),
+      })
+    } catch {
+      const fallback = getPlaceUrlFallback(query, locationBias)
+
+      if (fallback) {
+        return fallback
+      }
+
+      throw new GooglePlacesError("Could not resolve Google Maps link", 503)
+    }
+
+    if (!searchResponse.ok) {
+      const fallback = getPlaceUrlFallback(query, locationBias)
+
+      if (fallback) {
+        return fallback
+      }
+
+      throw new GooglePlacesError("Could not resolve Google Maps link")
+    }
+
+    let searchResponseBody: unknown
+
+    try {
+      searchResponseBody = await searchResponse.json()
+    } catch {
+      const fallback = getPlaceUrlFallback(query, locationBias)
+
+      if (fallback) {
+        return fallback
+      }
+
+      throw new GooglePlacesError("Could not resolve Google Maps link", 503)
+    }
+
+    const searchResult = placeSearchIdSchema.safeParse(searchResponseBody)
+    if (!searchResult.success || searchResult.data.places.length === 0) {
+      const fallback = getPlaceUrlFallback(query, locationBias)
+
+      if (fallback) {
+        return fallback
+      }
+
+      throw new GooglePlacesError("No place found for Google Maps link")
+    }
+
+    placeId = searchResult.data.places[0].id
+  }
+
   const placeResourceName = placeId.startsWith("places/") ? placeId : `places/${placeId}`
   let detailsResponse: Response
 
@@ -466,9 +476,11 @@ const SUGGESTION_SEARCH_FIELD_MASK = [
   "places.photos",
 ].join(",")
 
-const SUGGESTION_MAX_RESULTS = 10
+const SUGGESTION_MAX_RESULTS = 20
 const SUGGESTION_RADIUS_METERS = 10_000
-const SUGGESTION_MAX_RETURN = 5
+const SUGGESTION_MAX_RETURN = 10
+const SUGGESTION_MAX_QUERY_ANSWERS = 4
+const SUGGESTION_CACHE_TTL_MS = 2 * 60 * 1000
 
 /**
  * Maps catalog optionIds to English search keywords appended to the base query.
@@ -487,11 +499,39 @@ const SUGGESTION_OPTION_KEYWORDS: Record<string, string> = {
   local: "local traditional",
   memorable: "landmark",
   "weather-proof": "indoor",
+  "weather-indoor": "indoor",
+  "weather-outdoor": "outdoor nature",
+  "weather-any": "",
   // activity-effort
   short: "quick",
   easy: "easy",
   moderate: "",
   adventurous: "adventure",
+  "effort-gentle": "easy",
+  "effort-active": "active outdoor",
+  "effort-challenging": "adventure hiking",
+  // activity context
+  "time-morning": "morning",
+  "time-day": "daytime",
+  "time-evening": "evening",
+  "social-solo": "solo",
+  "social-together": "couples",
+  "social-group": "group",
+  "scenery-water": "waterfront",
+  "scenery-green": "park nature",
+  "scenery-city": "city urban",
+  "pace-quick": "quick",
+  "pace-relaxed": "relaxed",
+  "pace-full-day": "full day",
+  "novelty-classic": "landmark popular",
+  "novelty-hidden": "hidden gem local",
+  "novelty-unusual": "unusual unique",
+  "setting-inside": "indoor",
+  "setting-outside": "outdoor",
+  "setting-mixed": "indoor outdoor",
+  "access-easy": "accessible",
+  "access-transit": "public transport",
+  "access-walk": "walking",
   // meal-occasion
   breakfast: "breakfast brunch",
   lunch: "lunch",
@@ -509,6 +549,36 @@ const SUGGESTION_OPTION_KEYWORDS: Record<string, string> = {
   scenic: "scenic view",
   quick: "fast food",
   cozy: "cozy",
+  "cuisine-local": "local Norwegian",
+  "cuisine-asian": "Asian",
+  "cuisine-european": "European",
+  "cuisine-global": "international",
+  "diet-any": "",
+  "diet-vegetarian": "vegetarian",
+  "diet-vegan": "vegan",
+  "diet-gluten-free": "gluten free",
+  "setting-casual": "casual bistro",
+  "setting-special": "fine dining",
+  "setting-cozy": "cozy",
+  "setting-lively": "lively",
+  "meal-pace-quick": "fast quick",
+  "pace-unhurried": "slow relaxed",
+  "pace-tasting": "tasting menu",
+  "location-central": "city center",
+  "location-scenic": "scenic view",
+  "location-neighborhood": "neighborhood local",
+  "company-solo": "solo",
+  "company-two": "couples",
+  "company-group": "group",
+  "budget-value": "affordable",
+  "budget-midrange": "mid-range",
+  "budget-special": "expensive luxury",
+  "experience-familiar": "classic",
+  "experience-new": "new trendy",
+  "experience-local": "local traditional",
+  "atmosphere-quiet": "quiet",
+  "atmosphere-social": "social lively",
+  "atmosphere-romantic": "romantic",
 }
 
 const ITEM_TYPE_BASE_QUERY: Record<string, string> = {
@@ -516,19 +586,36 @@ const ITEM_TYPE_BASE_QUERY: Record<string, string> = {
   meal: "restaurant food",
 }
 
-/** Builds one text query per answer, ordered oldest-to-newest (recency ascending). */
+const SUGGESTION_SEASON_KEYWORDS: Record<string, string> = {
+  spring: "spring",
+  summer: "summer",
+  autumn: "autumn fall",
+  winter: "winter",
+}
+
+/** Builds a broad query plus recent answer queries, ordered by recency. */
 export function buildSuggestionQueries(
   itemType: string,
   answers: { questionId: string; optionId: string }[],
+  season = "any",
+  searchMode = "refine",
+  categoryHint?: string,
 ): string[] {
   const base = ITEM_TYPE_BASE_QUERY[itemType] ?? itemType
-  if (answers.length === 0) {
-    return [base]
+  const seasonKeyword = SUGGESTION_SEASON_KEYWORDS[season] ?? ""
+  const modeKeyword =
+    searchMode === "surprise" ? "unique local hidden gem" : searchMode === "similar" ? categoryHint ?? "" : ""
+  const recentAnswers = answers.slice(-SUGGESTION_MAX_QUERY_ANSWERS)
+  if (recentAnswers.length === 0) {
+    return [[base, seasonKeyword, modeKeyword].filter(Boolean).join(" ")]
   }
-  return answers.map((answer) => {
-    const keyword = SUGGESTION_OPTION_KEYWORDS[answer.optionId] ?? ""
-    return [base, keyword].filter(Boolean).join(" ")
-  })
+  return [
+    [base, seasonKeyword, modeKeyword].filter(Boolean).join(" "),
+    ...recentAnswers.map((answer) => {
+      const keyword = SUGGESTION_OPTION_KEYWORDS[answer.optionId] ?? ""
+      return [base, seasonKeyword, modeKeyword, keyword].filter(Boolean).join(" ")
+    }),
+  ]
 }
 
 function haversineDistanceMeters(
@@ -552,6 +639,34 @@ async function fetchSuggestionResults(
   textQuery: string,
   latitude: number,
   longitude: number,
+  cache: Map<string, { expiresAt: number; result: Promise<SuggestionResult[]> }>,
+): Promise<SuggestionResult[]> {
+  const cacheKey = `${textQuery}|${latitude.toFixed(3)}|${longitude.toFixed(3)}`
+  const now = Date.now()
+  const cached = cache.get(cacheKey)
+  if (cached && cached.expiresAt > now) {
+    return cached.result
+  }
+
+  for (const [key, entry] of cache) {
+    if (entry.expiresAt <= now) {
+      cache.delete(key)
+    }
+  }
+
+  const result = fetchUncachedSuggestionResults(apiKey, textQuery, latitude, longitude)
+  cache.set(cacheKey, {
+    expiresAt: now + SUGGESTION_CACHE_TTL_MS,
+    result,
+  })
+  return result
+}
+
+async function fetchUncachedSuggestionResults(
+  apiKey: string,
+  textQuery: string,
+  latitude: number,
+  longitude: number,
 ): Promise<SuggestionResult[]> {
   let response: Response
   try {
@@ -566,7 +681,7 @@ async function fetchSuggestionResults(
         languageCode: "nb",
         textQuery,
         maxResultCount: SUGGESTION_MAX_RESULTS,
-        locationRestriction: {
+        locationBias: {
           circle: {
             center: { latitude, longitude },
             radius: SUGGESTION_RADIUS_METERS,
@@ -600,19 +715,35 @@ export type GooglePlacesSuggestionsResolver = (
 export function createGooglePlacesSuggestionsResolver(
   apiKey = process.env.GOOGLE_PLACES_API_KEY,
 ): GooglePlacesSuggestionsResolver {
+  const suggestionCache = new Map<
+    string,
+    { expiresAt: number; result: Promise<SuggestionResult[]> }
+  >()
+
   return async (input) => {
     if (!apiKey) {
       throw new GooglePlacesError("Google Places is not configured", 503)
     }
 
-    const { latitude, longitude, itemType, answers, excludedPlaceIds } = input
+    const {
+      latitude,
+      longitude,
+      itemType,
+      season,
+      searchMode,
+      categoryHint,
+      answers,
+      excludedPlaceIds,
+    } = input
     const excludedSet = new Set(excludedPlaceIds)
 
     // One query per answer. Index 0 = oldest answer (weight 1), last = most recent (highest weight).
-    const queries = buildSuggestionQueries(itemType, answers)
+    const queries = buildSuggestionQueries(itemType, answers, season, searchMode, categoryHint)
 
     const allResults = await Promise.all(
-      queries.map((query) => fetchSuggestionResults(apiKey, query, latitude, longitude)),
+      queries.map((query) =>
+        fetchSuggestionResults(apiKey, query, latitude, longitude, suggestionCache),
+      ),
     )
 
     // Score and deduplicate across queries.
@@ -627,7 +758,19 @@ export function createGooglePlacesSuggestionsResolver(
         const place = results[pos]
         if (excludedSet.has(place.id)) continue
 
+        const placeLat = place.location?.latitude
+        const placeLon = place.location?.longitude
+        if (placeLat === undefined || placeLon === undefined) {
+          continue
+        }
+
+        const distanceMeters = haversineDistanceMeters(latitude, longitude, placeLat, placeLon)
+        if (distanceMeters > SUGGESTION_RADIUS_METERS) {
+          continue
+        }
+
         const positionScore = (SUGGESTION_MAX_RESULTS - pos) / SUGGESTION_MAX_RESULTS
+        const distanceScore = 0.25 * (1 - distanceMeters / SUGGESTION_RADIUS_METERS)
         const ratingScore =
           ((place.rating ?? 0) * Math.log10((place.userRatingCount ?? 0) + 10)) / 5
 
@@ -636,7 +779,10 @@ export function createGooglePlacesSuggestionsResolver(
           // Accumulate recency + position score; don't double-count rating
           existing.score += weight * positionScore
         } else {
-          scored.set(place.id, { place, score: weight * positionScore + ratingScore })
+          scored.set(place.id, {
+            place,
+            score: weight * positionScore + distanceScore + ratingScore,
+          })
         }
       }
     }
@@ -646,13 +792,17 @@ export function createGooglePlacesSuggestionsResolver(
       .slice(0, SUGGESTION_MAX_RETURN)
 
     const suggestions: GooglePlaceSuggestion[] = sorted.map(({ place }) => {
-      const placeLat = place.location?.latitude ?? latitude
-      const placeLon = place.location?.longitude ?? longitude
+      const placeLat = place.location?.latitude
+      const placeLon = place.location?.longitude
+
+      if (placeLat === undefined || placeLon === undefined) {
+        throw new GooglePlacesError("Google place location is invalid")
+      }
 
       return {
         placeId: place.id,
         name: place.displayName.text,
-        address: place.formattedAddress ?? "",
+        address: place.formattedAddress ?? place.displayName.text,
         latitude: placeLat,
         longitude: placeLon,
         category: place.primaryTypeDisplayName?.text ?? null,
@@ -660,7 +810,8 @@ export function createGooglePlacesSuggestionsResolver(
         rating: place.rating ?? null,
         userRatingCount: place.userRatingCount ?? null,
         googleMapsUrl: `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(place.id)}`,
-        photoName: place.photos?.[0]?.name ?? null,
+        photoNames: place.photos?.map((photo) => photo.name).slice(0, 4) ?? [],
+        matchOptionIds: answers.slice(-3).map((answer) => answer.optionId),
         distanceMeters: Math.round(haversineDistanceMeters(latitude, longitude, placeLat, placeLon)),
       }
     })

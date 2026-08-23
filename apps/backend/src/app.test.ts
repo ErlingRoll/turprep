@@ -1382,7 +1382,8 @@ const mockSuggestion = {
   rating: 4.5,
   userRatingCount: 200,
   googleMapsUrl: "https://www.google.com/maps/place/?q=place_id:place-1",
-  photoName: "places/place-1/photos/photo1",
+  photoNames: ["places/place-1/photos/photo1"],
+  matchOptionIds: [],
   distanceMeters: 100,
 }
 

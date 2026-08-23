@@ -10,6 +10,7 @@ import type { TripPresenceViewer } from "./useTripPresence"
 type DesktopTripNavbarProps = {
   email: string | undefined
   isBackupMode: boolean
+  isMapMode: boolean
   isPlanMode: boolean
   isTravelMode: boolean
   onSignOut: () => void
@@ -20,6 +21,7 @@ type DesktopTripNavbarProps = {
 export function DesktopTripNavbar({
   email,
   isBackupMode,
+  isMapMode,
   isPlanMode,
   isTravelMode,
   onSignOut,
@@ -92,6 +94,16 @@ export function DesktopTripNavbar({
                 to={`${tripBasePath}/backup`}
               >
                 {t("tripModes.backup")}
+              </Link>
+              <Link
+                className={`flex-1 rounded-lg px-4 py-2 text-center text-sm font-semibold transition ${
+                  isMapMode
+                    ? "bg-brand-surface text-on-brand shadow-sm"
+                    : "text-muted hover:bg-surface hover:text-on-surface"
+                }`}
+                to={`${tripBasePath}/map`}
+              >
+                {t("tripModes.map")}
               </Link>
               <Link
                 className={`flex-1 rounded-lg px-4 py-2 text-center text-sm font-semibold transition ${

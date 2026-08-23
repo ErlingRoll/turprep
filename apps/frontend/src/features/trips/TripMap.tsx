@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
-import { importLibrary, setOptions } from "@googlemaps/js-api-loader"
 import {
   getGooglePlaceDetails,
   getGooglePlacePhoto,
   type GooglePlaceDetails,
+  type GooglePlaceSuggestion,
 } from "../../api"
 import { formatDate } from "../../lib/date-format"
+import { formatGooglePriceLevel } from "../../lib/google-place-format"
 import { getErrorMessage } from "../../lib/errors"
+import { loadGoogleMaps } from "../../lib/google-maps"
 import { MobileMenuButton } from "../../components/MobileMenuButton"
 
 export type TripMapMarker = {
@@ -24,6 +26,7 @@ type TripMapProps = {
   accessToken: string
   markers: TripMapMarker[]
   renderMarkerDetails?: (marker: TripMapMarker) => ReactNode
+  renderSuggestionDetails?: (suggestion: GooglePlaceSuggestion) => ReactNode
   onMarkerClick?: (marker: TripMapMarker) => void
   onMarkerLocationSave?: (
     marker: TripMapMarker,
@@ -34,9 +37,22 @@ type TripMapProps = {
   onFocusMarkerHandled?: () => void
   fullScreen?: boolean
   fullScreenToolbar?: ReactNode
+  onMapClick?: (point: { latitude: number; longitude: number }) => void
+  onSuggestionModeToggle?: () => void
+  onSuggestionMarkerClick?: (suggestion: GooglePlaceSuggestion) => void
+  suggestionMode?: boolean
+  suggestionMarkers?: GooglePlaceSuggestion[]
+  selectedSuggestionPlaceId?: string | null
+  selectedSuggestion?: GooglePlaceSuggestion | null
+  suggestionPanel?: ReactNode
+  suggestionPin?: { latitude: number; longitude: number } | null
 }
 
 const markerDetailsAnimationDuration = 180
+const markerZIndex = 1_000_000
+const suggestionFlagCursor = `url("data:image/svg+xml,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="M7 28V4" stroke="#9a3412" stroke-width="2"/><path d="M8 5h16l-5 6 5 6H8z" fill="#c2410c" stroke="#fff7ed" stroke-width="2"/></svg>',
+)}") 7 4, crosshair`
 
 function prefersReducedMotion() {
   return (
@@ -44,11 +60,84 @@ function prefersReducedMotion() {
   )
 }
 
-function bringMarkerToFront(markers: Map<string, google.maps.Marker>, marker: TripMapMarker) {
+type MapMarker = google.maps.marker.AdvancedMarkerElement
+
+function bringMarkerToFront(markers: Map<string, MapMarker>, marker: TripMapMarker) {
   markers.forEach((currentMarker) => {
-    currentMarker.setZIndex(undefined)
+    currentMarker.zIndex = null
   })
-  markers.get(`${marker.type}:${marker.id}`)?.setZIndex(google.maps.Marker.MAX_ZINDEX + 1)
+  const selectedMarker = markers.get(`${marker.type}:${marker.id}`)
+  if (selectedMarker) {
+    selectedMarker.zIndex = markerZIndex + 1
+  }
+}
+
+function createMarkerContent(icon: google.maps.Icon) {
+  const content = document.createElement("img")
+  content.alt = ""
+  content.setAttribute("aria-hidden", "true")
+  content.draggable = false
+  content.src = icon.url
+  content.style.display = "block"
+  content.style.pointerEvents = "none"
+
+  if (icon.scaledSize) {
+    content.width = icon.scaledSize.width
+    content.height = icon.scaledSize.height
+  }
+
+  return content
+}
+
+function createMapMarker(options: {
+  icon: google.maps.Icon
+  map: google.maps.Map
+  position: google.maps.LatLngLiteral
+  title: string
+  zIndex?: number
+  draggable?: boolean
+  onClick?: () => void
+  onDragEnd?: () => void
+}) {
+  const marker = new google.maps.marker.AdvancedMarkerElement({
+    content: createMarkerContent(options.icon),
+    gmpClickable: Boolean(options.onClick),
+    gmpDraggable: options.draggable,
+    map: options.map,
+    position: options.position,
+    title: options.title,
+    zIndex: options.zIndex,
+  })
+
+  if (options.onClick) {
+    marker.addEventListener("gmp-click", options.onClick)
+  }
+  if (options.onDragEnd) {
+    marker.addListener("dragend", options.onDragEnd)
+  }
+
+  return marker
+}
+
+function setMarkerIcon(marker: MapMarker, icon: google.maps.Icon) {
+  marker.replaceChildren(createMarkerContent(icon))
+}
+
+function detachMarker(marker: MapMarker) {
+  marker.map = null
+}
+
+function getMarkerPosition(marker: MapMarker) {
+  const position = marker.position
+  if (!position) {
+    return null
+  }
+
+  if (position instanceof google.maps.LatLng) {
+    return { lat: position.lat(), lng: position.lng() }
+  }
+
+  return { lat: position.lat, lng: position.lng }
 }
 
 function fitMapToMarkers(map: google.maps.Map, markers: TripMapMarker[]) {
@@ -114,6 +203,58 @@ function markerIcon(marker: TripMapMarker): google.maps.Icon {
   }
 }
 
+function suggestionMarkerIcon(
+  suggestion: GooglePlaceSuggestion,
+  isSelected: boolean,
+): google.maps.Icon {
+  const color = isSelected ? "#9a3412" : "#c2410c"
+  if (!isSelected) {
+    const compactSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40"><path d="M7 37V4" stroke="${color}" stroke-width="3"/><path d="M8 5h18l-6 7 6 7H8z" fill="${color}" stroke="#fff7ed" stroke-width="2"/></svg>`
+    return {
+      url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(compactSvg)}`,
+      scaledSize: new google.maps.Size(32, 40),
+      anchor: new google.maps.Point(7, 40),
+    }
+  }
+
+  const label = getMarkerLabel(suggestion.name)
+  const width = Math.max(112, Math.min(240, label.length * 7 + 54))
+  const encodedLabel = label
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;")
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="48" viewBox="0 0 ${width} 48"><path d="M8 43V5" stroke="${color}" stroke-width="3"/><path d="M9 6h18l-6 7 6 7H9z" fill="${color}" stroke="#fff7ed" stroke-width="2"/><rect x="28" y="4" width="${width - 30}" height="29" rx="14" fill="${color}" stroke="#fff7ed" stroke-width="2"/><text x="${28 + (width - 30) / 2}" y="22" fill="#fff7ed" font-family="Arial,sans-serif" font-size="11" font-weight="700" text-anchor="middle">${encodedLabel}</text></svg>`
+
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: new google.maps.Size(width, 48),
+    anchor: new google.maps.Point(8, 48),
+  }
+}
+
+function suggestionClusterIcon(count: number): google.maps.Icon {
+  const label = count > 99 ? "99+" : String(count)
+  const size = count > 99 ? 42 : 36
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 2}" fill="#c2410c" stroke="#fff7ed" stroke-width="3"/><text x="${size / 2}" y="${size / 2 + 5}" fill="#fff7ed" font-family="Arial,sans-serif" font-size="13" font-weight="700" text-anchor="middle">${label}</text></svg>`
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: new google.maps.Size(size, size),
+    anchor: new google.maps.Point(size / 2, size / 2),
+  }
+}
+
+function suggestionSearchPinIcon(): google.maps.Icon {
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="52" height="64" viewBox="0 0 52 64"><circle cx="18" cy="54" r="7" fill="#1e293b" stroke="#fff" stroke-width="3"/><path d="M18 55V7" stroke="#1e293b" stroke-width="4" stroke-linecap="round"/><path d="M20 8h26l-8 10 8 10H20z" fill="#facc15" stroke="#1e293b" stroke-width="3" stroke-linejoin="round"/><circle cx="18" cy="54" r="2" fill="#fff"/></svg>'
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: new google.maps.Size(52, 64),
+    anchor: new google.maps.Point(18, 54),
+  }
+}
+
 function formatGoogleValue(value: string) {
   return value
     .replaceAll("_", " ")
@@ -121,30 +262,33 @@ function formatGoogleValue(value: string) {
     .replace(/^\w/, (character) => character.toLocaleUpperCase())
 }
 
-function formatGooglePriceLevel(priceLevel: string) {
-  return {
-    PRICE_LEVEL_FREE: "Free",
-    PRICE_LEVEL_INEXPENSIVE: "€",
-    PRICE_LEVEL_MODERATE: "€€",
-    PRICE_LEVEL_EXPENSIVE: "€€€",
-    PRICE_LEVEL_VERY_EXPENSIVE: "€€€€",
-  }[priceLevel] ?? formatGoogleValue(priceLevel)
-}
-
 export function TripMap({
   accessToken,
   markers,
   renderMarkerDetails,
+  renderSuggestionDetails,
   onMarkerClick,
   onMarkerLocationSave,
   focusMarker,
   onFocusMarkerHandled,
   fullScreen = false,
   fullScreenToolbar,
+  onMapClick,
+  onSuggestionModeToggle,
+  onSuggestionMarkerClick,
+  suggestionMode = false,
+  suggestionMarkers = [],
+  selectedSuggestionPlaceId = null,
+  selectedSuggestion = null,
+  suggestionPanel,
+  suggestionPin = null,
 }: TripMapProps) {
   const { t } = useTranslation()
   const [isMobileOpen, setIsMobileOpen] = useState(false)
   const [selectedMarker, setSelectedMarker] = useState<TripMapMarker | null>(null)
+  const [activeSuggestion, setActiveSuggestion] = useState<GooglePlaceSuggestion | null>(
+    selectedSuggestion,
+  )
   const [googlePlaceDetails, setGooglePlaceDetails] = useState<GooglePlaceDetails | null>(null)
   const [googlePlaceError, setGooglePlaceError] = useState<string | null>(null)
   const [isLoadingGooglePlace, setIsLoadingGooglePlace] = useState(false)
@@ -163,20 +307,29 @@ export function TripMap({
   const [locationEditError, setLocationEditError] = useState<string | null>(null)
   const [mapLoadError, setMapLoadError] = useState<string | null>(null)
   const [isMapReady, setIsMapReady] = useState(false)
-  const hasDesktopDetailsPanel = Boolean(selectedMarker && renderMarkerDetails)
+  const hasDesktopDetailsPanel = Boolean(
+    (selectedMarker && renderMarkerDetails) || (activeSuggestion && renderSuggestionDetails),
+  )
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<google.maps.Map | null>(null)
-  const markerRefs = useRef<Map<string, google.maps.Marker>>(new Map())
+  const markersRef = useRef(markers)
+  const markerRefs = useRef<Map<string, MapMarker>>(new Map())
+  const hasFittedMarkerViewportRef = useRef(false)
   const markerDetailsCloseTimeoutRef = useRef<number | null>(null)
+  const suggestionPinRef = useRef<MapMarker | null>(null)
+  const suggestionMarkerRefs = useRef<Map<string, MapMarker>>(new Map())
   const renderMarkerDetailsRef = useRef(renderMarkerDetails)
   const onMarkerClickRef = useRef(onMarkerClick)
   const onMarkerLocationSaveRef = useRef(onMarkerLocationSave)
   const onFocusMarkerHandledRef = useRef(onFocusMarkerHandled)
+  const onSuggestionMarkerClickRef = useRef(onSuggestionMarkerClick)
   const isLocationEditModeRef = useRef(isLocationEditMode)
+  markersRef.current = markers
   renderMarkerDetailsRef.current = renderMarkerDetails
   onMarkerClickRef.current = onMarkerClick
   onMarkerLocationSaveRef.current = onMarkerLocationSave
   onFocusMarkerHandledRef.current = onFocusMarkerHandled
+  onSuggestionMarkerClickRef.current = onSuggestionMarkerClick
   isLocationEditModeRef.current = isLocationEditMode
 
   useEffect(() => {
@@ -186,6 +339,7 @@ export function TripMap({
 
     let isCancelled = false
     const markerMap = markerRefs.current
+    const suggestionMarkerMap = suggestionMarkerRefs.current
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 
     if (!apiKey) {
@@ -193,13 +347,7 @@ export function TripMap({
       return
     }
 
-    setOptions({
-      key: apiKey,
-      language: "en",
-      v: "weekly",
-    })
-
-    void Promise.all([importLibrary("maps"), importLibrary("marker")])
+    void loadGoogleMaps(apiKey)
       .then(() => {
         if (isCancelled || !containerRef.current) {
           return
@@ -211,6 +359,7 @@ export function TripMap({
           fullscreenControl: false,
           gestureHandling: "greedy",
           mapTypeControl: false,
+          mapId: import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || "DEMO_MAP_ID",
           streetViewControl: false,
           zoom: 2,
           zoomControl: true,
@@ -230,9 +379,16 @@ export function TripMap({
 
     return () => {
       isCancelled = true
-      markerMap.forEach((marker) => marker.setMap(null))
+      markerMap.forEach(detachMarker)
       markerMap.clear()
+      suggestionMarkerMap.forEach(detachMarker)
+      suggestionMarkerMap.clear()
+      if (suggestionPinRef.current) {
+        detachMarker(suggestionPinRef.current)
+      }
+      suggestionPinRef.current = null
       mapRef.current = null
+      hasFittedMarkerViewportRef.current = false
       setIsMapReady(false)
     }
   }, [t])
@@ -244,7 +400,7 @@ export function TripMap({
       return
     }
 
-    markerRefs.current.forEach((marker) => marker.setMap(null))
+    markerRefs.current.forEach(detachMarker)
     markerRefs.current.clear()
 
     if (markers.length === 0) {
@@ -252,73 +408,247 @@ export function TripMap({
     }
 
     markers.forEach((marker) => {
-      const mapMarker = new google.maps.Marker({
+      const mapMarker = createMapMarker({
         draggable: isLocationEditModeRef.current,
         icon: markerIcon(marker),
         map,
+        onClick: () => {
+          bringMarkerToFront(markerRefs.current, marker)
+
+          if (isLocationEditModeRef.current) {
+            return
+          }
+
+          if (window.innerWidth >= 1024) {
+            onMarkerClickRef.current?.(marker)
+            setActiveSuggestion(null)
+            if (renderMarkerDetailsRef.current) {
+              setSelectedMarker(marker)
+            }
+            return
+          }
+
+          if (!renderMarkerDetailsRef.current) {
+            return
+          }
+
+          if (markerDetailsCloseTimeoutRef.current !== null) {
+            window.clearTimeout(markerDetailsCloseTimeoutRef.current)
+            markerDetailsCloseTimeoutRef.current = null
+          }
+          setIsMarkerDetailsClosing(false)
+          setActiveSuggestion(null)
+          setSelectedMarker(marker)
+        },
+        onDragEnd: () => {
+          if (!isLocationEditModeRef.current) {
+            return
+          }
+
+          const position = getMarkerPosition(mapMarker)
+          if (!position) {
+            return
+          }
+
+          setDraftLocation((currentDraft) => ({
+            marker,
+            latitude: position.lat,
+            longitude: position.lng,
+            originalLatitude:
+              currentDraft?.marker.id === marker.id ? currentDraft.originalLatitude : marker.latitude,
+            originalLongitude:
+              currentDraft?.marker.id === marker.id
+                ? currentDraft.originalLongitude
+                : marker.longitude,
+          }))
+          setLocationEditError(null)
+        },
         position: { lat: marker.latitude, lng: marker.longitude },
         title: `${marker.title}, ${formatDate(marker.date)}`,
-      })
-
-      mapMarker.addListener("click", () => {
-        bringMarkerToFront(markerRefs.current, marker)
-
-        if (isLocationEditModeRef.current) {
-          return
-        }
-
-        if (window.innerWidth >= 1024) {
-          onMarkerClickRef.current?.(marker)
-          if (renderMarkerDetailsRef.current) {
-            setSelectedMarker(marker)
-          }
-          return
-        }
-
-        if (!renderMarkerDetailsRef.current) {
-          return
-        }
-
-        if (markerDetailsCloseTimeoutRef.current !== null) {
-          window.clearTimeout(markerDetailsCloseTimeoutRef.current)
-          markerDetailsCloseTimeoutRef.current = null
-        }
-        setIsMarkerDetailsClosing(false)
-        setSelectedMarker(marker)
-      })
-
-      mapMarker.addListener("dragend", () => {
-        if (!isLocationEditModeRef.current) {
-          return
-        }
-
-        const position = mapMarker.getPosition()
-        if (!position) {
-          return
-        }
-
-        setDraftLocation((currentDraft) => ({
-          marker,
-          latitude: position.lat(),
-          longitude: position.lng(),
-          originalLatitude:
-            currentDraft?.marker.id === marker.id ? currentDraft.originalLatitude : marker.latitude,
-          originalLongitude:
-            currentDraft?.marker.id === marker.id
-              ? currentDraft.originalLongitude
-              : marker.longitude,
-        }))
-        setLocationEditError(null)
       })
 
       markerRefs.current.set(`${marker.type}:${marker.id}`, mapMarker)
     })
 
-    fitMapToMarkers(map, markers)
+    if (!hasFittedMarkerViewportRef.current) {
+      fitMapToMarkers(map, markers)
+      if (markers.length > 0) {
+        hasFittedMarkerViewportRef.current = true
+      }
+      return
+    }
+
+    const center = map.getCenter()?.toJSON()
+    const zoom = map.getZoom()
+    if (center && zoom !== undefined) {
+      map.setCenter(center)
+      map.setZoom(zoom)
+    }
   }, [isMapReady, markers])
 
   useEffect(() => {
-    markerRefs.current.forEach((marker) => marker.setDraggable(isLocationEditMode))
+    const map = mapRef.current
+
+    if (!map || !isMapReady) {
+      return
+    }
+
+    suggestionMarkerRefs.current.forEach(detachMarker)
+    suggestionMarkerRefs.current.clear()
+
+    const groups = new Map<string, GooglePlaceSuggestion[]>()
+    const gridSize = 0.004
+    suggestionMarkers.forEach((suggestion) => {
+      const key = `${Math.floor(suggestion.latitude / gridSize)}:${Math.floor(
+        suggestion.longitude / gridSize,
+      )}`
+      groups.set(key, [...(groups.get(key) ?? []), suggestion])
+    })
+
+    groups.forEach((group, groupKey) => {
+      if (group.length > 1 && !group.some((suggestion) => suggestion.placeId === selectedSuggestionPlaceId)) {
+        const position = {
+          lat: group.reduce((total, suggestion) => total + suggestion.latitude, 0) / group.length,
+          lng: group.reduce((total, suggestion) => total + suggestion.longitude, 0) / group.length,
+        }
+        const clusterMarker = createMapMarker({
+          icon: suggestionClusterIcon(group.length),
+          map,
+          onClick: () => {
+            map.panTo(position)
+            map.setZoom(Math.min((map.getZoom() ?? 13) + 2, 20))
+          },
+          position,
+          title: `${group.length} suggestions`,
+          zIndex: markerZIndex + 1,
+        })
+        suggestionMarkerRefs.current.set(`cluster:${groupKey}`, clusterMarker)
+        return
+      }
+
+      group.forEach((suggestion) => {
+        const mapMarker = createMapMarker({
+          icon: suggestionMarkerIcon(suggestion, suggestion.placeId === selectedSuggestionPlaceId),
+          map,
+          onClick: () => {
+            setSelectedMarker(null)
+            setActiveSuggestion(suggestion)
+            onSuggestionMarkerClickRef.current?.(suggestion)
+          },
+          position: { lat: suggestion.latitude, lng: suggestion.longitude },
+          title: suggestion.name,
+          zIndex:
+            suggestion.placeId === selectedSuggestionPlaceId ? markerZIndex + 3 : undefined,
+        })
+        suggestionMarkerRefs.current.set(suggestion.placeId, mapMarker)
+      })
+    })
+  }, [isMapReady, selectedSuggestionPlaceId, suggestionMarkers])
+
+  useEffect(() => {
+    setActiveSuggestion(selectedSuggestion)
+    if (selectedSuggestion) {
+      setSelectedMarker(null)
+    }
+  }, [selectedSuggestion])
+
+  useEffect(() => {
+    const map = mapRef.current
+    const selectedSuggestion = suggestionMarkers.find(
+      (suggestion) => suggestion.placeId === selectedSuggestionPlaceId,
+    )
+
+    suggestionMarkerRefs.current.forEach((marker, placeId) => {
+      const suggestion = suggestionMarkers.find((candidate) => candidate.placeId === placeId)
+      if (!suggestion) {
+        return
+      }
+
+      const isSelected = placeId === selectedSuggestionPlaceId
+      setMarkerIcon(marker, suggestionMarkerIcon(suggestion, isSelected))
+      marker.zIndex = isSelected ? markerZIndex + 3 : null
+    })
+
+    if (map && selectedSuggestion) {
+      const center = { lat: selectedSuggestion.latitude, lng: selectedSuggestion.longitude }
+      if (prefersReducedMotion()) {
+        map.setCenter(center)
+      } else {
+        map.panTo(center)
+      }
+      map.setZoom(15)
+    }
+  }, [selectedSuggestionPlaceId, suggestionMarkers])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !isMapReady) {
+      return
+    }
+
+    if (!suggestionPin) {
+      if (suggestionPinRef.current) {
+        detachMarker(suggestionPinRef.current)
+      }
+      return
+    }
+
+    if (!suggestionPinRef.current) {
+      suggestionPinRef.current = createMapMarker({
+        icon: suggestionSearchPinIcon(),
+        map,
+        position: { lat: suggestionPin.latitude, lng: suggestionPin.longitude },
+        title: t("suggestionHelper.pin"),
+        zIndex: markerZIndex + 2,
+      })
+      return
+    }
+
+    suggestionPinRef.current.map = map
+    suggestionPinRef.current.position = {
+      lat: suggestionPin.latitude,
+      lng: suggestionPin.longitude,
+    }
+  }, [isMapReady, suggestionPin, t])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !isMapReady || !onMapClick) {
+      return
+    }
+
+    const listener = map.addListener("click", (event: google.maps.MapMouseEvent) => {
+      if (!event.latLng) {
+        return
+      }
+
+      onMapClick({
+        latitude: event.latLng.lat(),
+        longitude: event.latLng.lng(),
+      })
+    })
+
+    return () => listener.remove()
+  }, [isMapReady, onMapClick])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !isMapReady) {
+      return
+    }
+
+    const mapElement = map.getDiv()
+    mapElement.style.cursor = suggestionMode ? suggestionFlagCursor : ""
+
+    return () => {
+      mapElement.style.cursor = ""
+    }
+  }, [isMapReady, suggestionMode])
+
+  useEffect(() => {
+    markerRefs.current.forEach((marker) => {
+      marker.gmpDraggable = isLocationEditMode
+    })
 
     if (!isLocationEditMode) {
       setDraftLocation(null)
@@ -336,7 +666,7 @@ export function TripMap({
 
   useEffect(() => {
     let isCancelled = false
-    const googleMapsUrl = selectedMarker?.googleMapsUrl
+    const googleMapsUrl = selectedMarker?.googleMapsUrl ?? activeSuggestion?.googleMapsUrl
 
     setGooglePlaceDetails(null)
     setGooglePlaceError(null)
@@ -367,11 +697,11 @@ export function TripMap({
     return () => {
       isCancelled = true
     }
-  }, [accessToken, selectedMarker?.googleMapsUrl])
+  }, [accessToken, activeSuggestion?.googleMapsUrl, selectedMarker?.googleMapsUrl])
 
   useEffect(() => {
     let isCancelled = false
-    const photos = googlePlaceDetails?.photos.slice(0, 4) ?? []
+    const photos = activeSuggestion ? [] : (googlePlaceDetails?.photos.slice(0, 4) ?? [])
 
     setGooglePlacePhotoUrls([])
     setGooglePlacePhotoError(null)
@@ -405,7 +735,7 @@ export function TripMap({
         return []
       })
     }
-  }, [accessToken, googlePlaceDetails])
+  }, [accessToken, activeSuggestion, googlePlaceDetails])
 
   useEffect(() => {
     if (!focusMarker || !mapRef.current || !isMapReady) {
@@ -451,11 +781,11 @@ export function TripMap({
       }
 
       google.maps.event.trigger(map, "resize")
-      fitMapToMarkers(map, markers)
+      fitMapToMarkers(map, markersRef.current)
     })
 
     return () => cancelAnimationFrame(frame)
-  }, [isMobileOpen, markers, selectedMarker])
+  }, [isMobileOpen, selectedMarker])
 
   useEffect(
     () => () => {
@@ -473,13 +803,16 @@ export function TripMap({
     }
     markerDetailsCloseTimeoutRef.current = window.setTimeout(() => {
       setSelectedMarker(null)
+      setActiveSuggestion(null)
       setIsMarkerDetailsClosing(false)
       markerDetailsCloseTimeoutRef.current = null
     }, markerDetailsAnimationDuration)
   }
 
   function renderGooglePlaceDetails() {
-    if (!selectedMarker?.googleMapsUrl) {
+    const googleMapsUrl = selectedMarker?.googleMapsUrl ?? activeSuggestion?.googleMapsUrl
+
+    if (!googleMapsUrl) {
       return null
     }
 
@@ -524,7 +857,7 @@ export function TripMap({
             )}
             {googlePlaceDetails.priceLevel && (
               <span>
-                {t("tripMap.priceLevel")}: {formatGooglePriceLevel(googlePlaceDetails.priceLevel)}
+                {t("tripMap.priceLevel")}: {formatGooglePriceLevel(googlePlaceDetails.priceLevel, t)}
               </span>
             )}
           </div>
@@ -572,12 +905,12 @@ export function TripMap({
             </ul>
           </div>
         )}
-        {googlePlacePhotoError && (
+        {!activeSuggestion && googlePlacePhotoError && (
           <p className="text-sm text-muted" role="status">
             {t("tripMap.photosUnavailable")}
           </p>
         )}
-        {googlePlacePhotoUrls.length > 0 && (
+        {!activeSuggestion && googlePlacePhotoUrls.length > 0 && (
           <div className="grid grid-cols-2 gap-2">
             {googlePlacePhotoUrls.map((photoUrl) => (
               <img
@@ -591,7 +924,7 @@ export function TripMap({
         )}
         <a
           className="text-sm font-semibold text-brand underline"
-          href={selectedMarker.googleMapsUrl}
+          href={googleMapsUrl}
           rel="noreferrer"
           target="_blank"
         >
@@ -603,7 +936,7 @@ export function TripMap({
 
   function resetMapView() {
     if (mapRef.current) {
-      fitMapToMarkers(mapRef.current, markers)
+      fitMapToMarkers(mapRef.current, markersRef.current)
     }
   }
 
@@ -629,12 +962,15 @@ export function TripMap({
 
   function cancelLocationEdit() {
     if (draftLocation) {
-      markerRefs.current
-        .get(`${draftLocation.marker.type}:${draftLocation.marker.id}`)
-        ?.setPosition({
+      const mapMarker = markerRefs.current.get(
+        `${draftLocation.marker.type}:${draftLocation.marker.id}`,
+      )
+      if (mapMarker) {
+        mapMarker.position = {
           lat: draftLocation.originalLatitude,
           lng: draftLocation.originalLongitude,
-        })
+        }
+      }
     }
     setDraftLocation(null)
     setLocationEditError(null)
@@ -660,10 +996,12 @@ export function TripMap({
       const mapMarker = markerRefs.current.get(
         `${draftLocation.marker.type}:${draftLocation.marker.id}`,
       )
-      mapMarker?.setPosition({
-        lat: draftLocation.originalLatitude,
-        lng: draftLocation.originalLongitude,
-      })
+      if (mapMarker) {
+        mapMarker.position = {
+          lat: draftLocation.originalLatitude,
+          lng: draftLocation.originalLongitude,
+        }
+      }
       setLocationEditError(t("tripMap.locationSaveFailed"))
     } finally {
       setIsSavingLocation(false)
@@ -705,7 +1043,7 @@ export function TripMap({
           className={
             fullScreen
               ? `absolute top-3 z-20 flex max-w-[calc(100%-1.5rem)] flex-col gap-1.5 rounded-xl bg-surface/95 p-4 shadow-card backdrop-blur-sm transition-[left] duration-200 ${
-                  hasDesktopDetailsPanel ? "left-[20.75rem]" : "left-3"
+                  hasDesktopDetailsPanel ? "left-[18.75rem]" : "left-3"
                 }`
               : "hidden shrink-0 items-center justify-between gap-3 px-1 lg:flex"
           }
@@ -776,15 +1114,15 @@ export function TripMap({
         </div>
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
           <aside
-            aria-hidden={!selectedMarker || !renderMarkerDetails}
+            aria-hidden={!hasDesktopDetailsPanel}
             className={`hidden shrink-0 flex-col overflow-hidden border-border-divider transition-[width,opacity] duration-200 lg:flex ${
-              selectedMarker && renderMarkerDetails
-                ? "lg:w-80 lg:border-r lg:opacity-100"
+              hasDesktopDetailsPanel
+                ? "lg:w-72 lg:border-r lg:opacity-100"
                 : "pointer-events-none lg:w-0 lg:border-r-0 lg:opacity-0"
             }`}
           >
-            <div className="flex w-80 min-w-80 flex-1 flex-col gap-3 overflow-y-auto p-3">
-              {selectedMarker && renderMarkerDetails && (
+            <div className="flex w-72 min-w-72 flex-1 flex-col gap-3 overflow-y-auto p-3">
+              {hasDesktopDetailsPanel && (
                 <>
                   <div className="flex shrink-0 items-center justify-between gap-3">
                     <h2 className="font-semibold text-brand">{t("tripMap.locationDetails")}</h2>
@@ -797,7 +1135,13 @@ export function TripMap({
                       showOnDesktop
                     />
                   </div>
-                  <div className="trip-map-marker-details">{renderMarkerDetails(selectedMarker)}</div>
+                  <div className="trip-map-marker-details">
+                    {selectedMarker && renderMarkerDetails
+                      ? renderMarkerDetails(selectedMarker)
+                      : activeSuggestion && renderSuggestionDetails
+                        ? renderSuggestionDetails(activeSuggestion)
+                        : null}
+                  </div>
                   {renderGooglePlaceDetails()}
                 </>
               )}
@@ -818,7 +1162,7 @@ export function TripMap({
               <div
                 className={`absolute z-10 max-w-64 rounded-lg bg-surface/95 px-3 py-2 text-xs text-on-surface shadow-card transition-[left] duration-200 ${
                   fullScreen
-                    ? `top-32 ${hasDesktopDetailsPanel ? "left-[20.75rem]" : "left-3"}`
+                    ? `top-32 ${hasDesktopDetailsPanel ? "left-[18.75rem]" : "left-3"}`
                     : "left-3 top-14"
                 }`}
               >
@@ -839,17 +1183,43 @@ export function TripMap({
             >
               {t("tripMap.reset")}
             </button>
+            {suggestionMode && (
+              <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-lg bg-surface/95 px-4 py-2 text-sm font-semibold text-on-surface shadow-card">
+                {t("suggestionHelper.placeFlag")}
+              </div>
+            )}
             {!fullScreen && (
               <div className="absolute bottom-3 left-3 z-10 grid gap-1 rounded-lg bg-surface/95 px-3 py-2 text-xs text-on-surface shadow-card">
                 {renderLegend()}
               </div>
             )}
+            {fullScreen && onSuggestionModeToggle && (
+              <button
+                aria-pressed={suggestionMode}
+                className={`absolute right-3 top-3 z-10 rounded-lg px-3 py-2 text-xs font-semibold shadow-card ${
+                  suggestionMode
+                    ? "bg-brand-surface text-on-brand"
+                    : "bg-surface text-on-surface hover:bg-surface-muted"
+                }`}
+                onClick={onSuggestionModeToggle}
+                type="button"
+              >
+                {suggestionMode
+                  ? t("suggestionHelper.cancelPin")
+                  : t("suggestionHelper.open")}
+              </button>
+            )}
             {markers.length === 0 && (
-              <div className="absolute inset-0 grid place-items-center bg-surface-muted/80 p-6 text-center text-sm text-muted">
+              <div
+                className={`absolute inset-0 grid place-items-center bg-surface-muted/80 p-6 text-center text-sm text-muted ${
+                  suggestionMode ? "pointer-events-none" : ""
+                }`}
+              >
                 {t("tripMap.noLocations")}
               </div>
             )}
           </div>
+          {suggestionPanel}
         </div>
         <div
           className={`order-first mt-3 flex shrink-0 items-center justify-between gap-3 px-1 lg:hidden ${
@@ -905,6 +1275,7 @@ export function TripMap({
             menuLabel={t("tripMap.close")}
             onToggle={() => {
               setSelectedMarker(null)
+              setActiveSuggestion(null)
               setIsMobileOpen(false)
             }}
             openLabel={t("tripMap.close")}
@@ -912,15 +1283,15 @@ export function TripMap({
           />
         </div>
       </section>
-      {selectedMarker && renderMarkerDetails && (
-        <div className="pointer-events-none fixed inset-x-0 top-0 z-[60] p-3 lg:hidden">
+      {(selectedMarker && renderMarkerDetails) || (activeSuggestion && renderSuggestionDetails) ? (
+        <div className="pointer-events-none fixed inset-0 z-[60] p-3 lg:hidden">
           <div
-            className={`trip-map-marker-details pointer-events-auto mx-auto max-w-xl${
+            className={`trip-map-marker-details pointer-events-auto mx-auto flex max-h-[calc(100dvh-1.5rem)] max-w-xl flex-col overflow-hidden rounded-2xl bg-surface shadow-card${
               isMarkerDetailsClosing ? " trip-map-marker-details-closing" : ""
             }`}
           >
-            {renderMarkerDetails(selectedMarker)}
-            <div className="flex justify-end pt-2">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border-divider p-3">
+              <h2 className="font-semibold text-brand">{t("tripMap.locationDetails")}</h2>
               <MobileMenuButton
                 closeLabel={t("tripMap.closeDetails")}
                 isOpen
@@ -930,9 +1301,17 @@ export function TripMap({
                 showOnDesktop
               />
             </div>
+            <div className="min-h-0 overflow-y-auto p-3">
+              {selectedMarker && renderMarkerDetails
+                ? renderMarkerDetails(selectedMarker)
+                : activeSuggestion && renderSuggestionDetails
+                  ? renderSuggestionDetails(activeSuggestion)
+                  : null}
+              {renderGooglePlaceDetails()}
+            </div>
           </div>
         </div>
-      )}
+      ) : null}
     </>
   )
 }

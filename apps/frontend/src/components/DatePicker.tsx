@@ -10,6 +10,7 @@ type DatePickerProps = {
   minDate?: string
   maxDate?: string
   clearable?: boolean
+  error?: string | null
 }
 
 function parseDate(value: string) {
@@ -53,9 +54,11 @@ export function DatePicker({
   minDate,
   maxDate,
   clearable = false,
+  error = null,
 }: DatePickerProps) {
   const { i18n, t } = useTranslation()
   const containerRef = useRef<HTMLDivElement>(null)
+  const errorId = `date-picker-error-${label.toLowerCase().replaceAll(/\s+/g, "-")}`
   const [isOpen, setIsOpen] = useState(false)
   const [popoverPosition, setPopoverPosition] = useState<PickerPosition | null>(null)
   const [viewDate, setViewDate] = useState(() => parseDate(value) ?? getToday())
@@ -150,12 +153,16 @@ export function DatePicker({
         <button
           aria-expanded={isOpen}
           aria-haspopup="dialog"
+          aria-describedby={error ? errorId : undefined}
+          aria-invalid={Boolean(error)}
           aria-label={
             value
               ? `${label}: ${dateFormatter.format(parseDate(value)!)}`
               : t("datePicker.chooseDate")
           }
-          className="flex min-h-12 w-full items-center justify-between rounded-xl border border-border bg-surface px-3 text-left text-ink outline-none transition hover:border-brand focus:border-brand focus:ring-2 focus:ring-soft"
+          className={`flex min-h-12 w-full items-center justify-between rounded-xl border bg-surface px-3 text-left text-ink outline-none transition hover:border-brand focus:border-brand focus:ring-2 focus:ring-soft ${
+            error ? "border-error" : "border-border"
+          }`}
           onClick={isOpen ? () => setIsOpen(false) : openPicker}
           type="button"
         >
@@ -166,6 +173,11 @@ export function DatePicker({
             ▾
           </span>
         </button>
+        {error && (
+          <p className="text-xs font-normal text-error" id={errorId} role="alert">
+            {error}
+          </p>
+        )}
       </span>
 
       {isOpen && popoverPosition && (

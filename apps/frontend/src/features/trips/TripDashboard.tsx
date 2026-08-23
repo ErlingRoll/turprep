@@ -252,6 +252,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
       <DesktopTripNavbar
         email={session.user.email}
         isBackupMode={isBackupMode}
+        isMapMode={isMapMode}
         isPlanMode={isPlanMode}
         isTravelMode={isTravelMode}
         onSignOut={() => void signOut()}

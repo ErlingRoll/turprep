@@ -44,6 +44,21 @@ export {
   GooglePlacePhotoSchema,
 } from "./google-place.js"
 export {
+  GooglePlaceSuggestionSchema,
+  GooglePlaceSuggestionsInputSchema,
+  GooglePlaceSuggestionsSchema,
+  SUGGESTION_QUESTION_CATALOG,
+  SuggestionAnswerSchema,
+  SuggestionDestinationSchema,
+  SuggestionItemTypeSchema,
+  SuggestionQuestionCatalogSchema,
+  SuggestionQuestionSchema,
+  SuggestionRegionSchema,
+  SuggestionSearchModeSchema,
+  SuggestionSeasonSchema,
+  getSuggestionRegion,
+} from "./suggestion.js"
+export {
   SetTripItemPreferenceInputSchema,
   TripItemPreferenceSchema,
   TripItemPreferenceValueSchema,
@@ -99,6 +114,17 @@ export type {
   GooglePlaceOpeningHours,
   GooglePlacePhoto,
 } from "./google-place.js"
+export type {
+  GooglePlaceSuggestion,
+  GooglePlaceSuggestionsInput,
+  SuggestionAnswer,
+  SuggestionDestination,
+  SuggestionItemType,
+  SuggestionQuestion,
+  SuggestionRegion,
+  SuggestionSearchMode,
+  SuggestionSeason,
+} from "./suggestion.js"
 export type {
   InviteTripMemberInput,
   RequestTripAccessInput,

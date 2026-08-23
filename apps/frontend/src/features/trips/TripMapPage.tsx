@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link, useSearchParams } from "react-router-dom"
 import {
   updateActivity,
   updateHousingStay,
   updateMeal,
+  type GooglePlaceSuggestion,
   type TripDetail,
 } from "../../api"
 import { formatDate } from "../../lib/date-format"
@@ -16,6 +17,13 @@ import {
   replaceMealInTrip,
 } from "./trip-state"
 import { TripMap, type TripMapMarker } from "./TripMap"
+import { TripSuggestionHelper, type SuggestionPin } from "./TripSuggestionHelper"
+import { SuggestionMediaGallery } from "./SuggestionMediaGallery"
+import {
+  clearSuggestionSessionState,
+  getSuggestionSessionState,
+  updateSuggestionSessionState,
+} from "./suggestion-session"
 
 type TripMapPageProps = {
   accessToken: string
@@ -32,7 +40,40 @@ export function TripMapPage({
 }: TripMapPageProps) {
   const { t } = useTranslation()
   const [searchParams] = useSearchParams()
+  const [storedSuggestionSession] = useState(() => getSuggestionSessionState(trip.id))
   const [showBackupItems, setShowBackupItems] = useState(false)
+  const [isSuggestionOpen, setIsSuggestionOpen] = useState(
+    () => storedSuggestionSession?.isSuggestionOpen ?? false,
+  )
+  const [isDroppingSuggestionPin, setIsDroppingSuggestionPin] = useState(
+    () => storedSuggestionSession?.isDroppingSuggestionPin ?? false,
+  )
+  const [suggestionPin, setSuggestionPin] = useState<SuggestionPin | null>(
+    () => storedSuggestionSession?.pin ?? null,
+  )
+  const [suggestions, setSuggestions] = useState<GooglePlaceSuggestion[]>(
+    () => storedSuggestionSession?.suggestions ?? [],
+  )
+  const [selectedSuggestionPlaceId, setSelectedSuggestionPlaceId] = useState<string | null>(
+    () => storedSuggestionSession?.selectedSuggestionPlaceId ?? null,
+  )
+
+  useEffect(() => {
+    updateSuggestionSessionState(trip.id, {
+      isSuggestionOpen,
+      isDroppingSuggestionPin,
+      pin: suggestionPin,
+      selectedSuggestionPlaceId,
+      suggestions,
+    })
+  }, [
+    isDroppingSuggestionPin,
+    isSuggestionOpen,
+    selectedSuggestionPlaceId,
+    suggestionPin,
+    suggestions,
+    trip.id,
+  ])
   const markers = useMemo<TripMapMarker[]>(
     () => {
       const activeMarkers: TripMapMarker[] = [
@@ -150,6 +191,57 @@ export function TripMapPage({
   const focusKey = searchParams.get("focus")
   const focusMarker =
     markers.find((marker) => `${marker.type}:${marker.id}` === focusKey) ?? null
+
+  const handleSuggestionModeToggle = useCallback(() => {
+    if (suggestionPin) {
+      if (!isSuggestionOpen) {
+        setIsSuggestionOpen(true)
+        return
+      }
+
+      setIsDroppingSuggestionPin((current) => !current)
+      return
+    }
+
+    setIsDroppingSuggestionPin((current) => !current)
+  }, [isSuggestionOpen, suggestionPin])
+
+  const handleSuggestionMapClick = useCallback((point: SuggestionPin) => {
+    if (suggestionPin) {
+      updateSuggestionSessionState(trip.id, {
+        isSuggestionOpen: true,
+        isDroppingSuggestionPin: false,
+        pin: point,
+        selectedSuggestionPlaceId: null,
+        suggestions: [],
+      })
+    } else {
+      clearSuggestionSessionState(trip.id)
+    }
+    setSuggestionPin(point)
+    setSuggestions([])
+    setSelectedSuggestionPlaceId(null)
+    setIsDroppingSuggestionPin(false)
+    setIsSuggestionOpen(true)
+  }, [suggestionPin, trip.id])
+
+  const handleSuggestionReset = useCallback(() => {
+    clearSuggestionSessionState(trip.id)
+    setSuggestionPin(null)
+    setSuggestions([])
+    setSelectedSuggestionPlaceId(null)
+    setIsSuggestionOpen(false)
+    setIsDroppingSuggestionPin(true)
+  }, [trip.id])
+
+  const handleSuggestionSelect = useCallback((suggestion: GooglePlaceSuggestion) => {
+    setSelectedSuggestionPlaceId(suggestion.placeId)
+    setIsSuggestionOpen(true)
+  }, [])
+
+  const handleMarkerClick = useCallback(() => {
+    setSelectedSuggestionPlaceId(null)
+  }, [])
 
   async function saveMarkerLocation(
     marker: TripMapMarker,
@@ -281,6 +373,37 @@ export function TripMapPage({
     )
   }
 
+  function renderSuggestionDetails(suggestion: GooglePlaceSuggestion) {
+    return (
+      <article className="rounded-2xl bg-surface/95 p-4 shadow-card backdrop-blur-sm">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+          {t("suggestionHelper.suggestion")}
+        </p>
+        <h2 className="mt-1 text-lg font-semibold text-brand">{suggestion.name}</h2>
+        <SuggestionMediaGallery accessToken={accessToken} suggestion={suggestion} />
+        <p className="mt-1 text-sm text-muted">{suggestion.address}</p>
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted">
+          {suggestion.category && <span>{suggestion.category}</span>}
+          <span>{Math.round(suggestion.distanceMeters)} m</span>
+          {suggestion.rating !== null && (
+            <span>
+              ★ {suggestion.rating.toFixed(1)}
+              {suggestion.userRatingCount !== null ? ` (${suggestion.userRatingCount})` : ""}
+            </span>
+          )}
+        </div>
+        <a
+          className="mt-3 block text-sm font-semibold text-brand underline"
+          href={suggestion.googleMapsUrl}
+          rel="noreferrer"
+          target="_blank"
+        >
+          {t("tripDetails.openGoogleMaps")}
+        </a>
+      </article>
+    )
+  }
+
   return (
     <section className={fullScreen ? "h-dvh" : "mt-4 grid gap-4"}>
       <TripMap
@@ -311,8 +434,33 @@ export function TripMapPage({
         }
         markers={markers}
         accessToken={accessToken}
+        onMarkerClick={handleMarkerClick}
         onMarkerLocationSave={saveMarkerLocation}
+        onMapClick={isDroppingSuggestionPin ? handleSuggestionMapClick : undefined}
+        onSuggestionModeToggle={handleSuggestionModeToggle}
+        onSuggestionMarkerClick={handleSuggestionSelect}
         renderMarkerDetails={renderMarkerDetails}
+        renderSuggestionDetails={renderSuggestionDetails}
+        suggestionMode={isDroppingSuggestionPin}
+        suggestionMarkers={suggestions}
+        selectedSuggestion={
+          suggestions.find((suggestion) => suggestion.placeId === selectedSuggestionPlaceId) ?? null
+        }
+        suggestionPanel={
+          isSuggestionOpen ? (
+            <TripSuggestionHelper
+              accessToken={accessToken}
+              onReset={handleSuggestionReset}
+              onSuggestionSelect={handleSuggestionSelect}
+              onSuggestionsChange={setSuggestions}
+              onTripUpdated={onTripUpdated}
+              pin={suggestionPin}
+              selectedSuggestionPlaceId={selectedSuggestionPlaceId}
+              trip={trip}
+            />
+          ) : undefined
+        }
+        suggestionPin={suggestionPin}
       />
     </section>
   )

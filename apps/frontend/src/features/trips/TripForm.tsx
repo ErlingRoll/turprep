@@ -20,9 +20,42 @@ export function TripForm({ accessToken, onCreated, onCancel }: TripFormProps) {
   const [endDate, setEndDate] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [touchedFields, setTouchedFields] = useState({
+    name: false,
+    startDate: false,
+    endDate: false,
+  })
+  const nameError = touchedFields.name && !name.trim() ? t("tripForm.nameRequired") : null
+  const startDateError =
+    touchedFields.startDate && !startDate ? t("tripForm.startDateRequired") : null
+  const endDateError = touchedFields.endDate
+    ? !endDate
+      ? t("tripForm.endDateRequired")
+      : endDate < startDate
+        ? t("errors.tripDatesInvalid")
+        : getTripDurationMessage(startDate, endDate)
+    : null
+  const isFormValid = Boolean(
+    name.trim() &&
+      startDate &&
+      endDate &&
+      endDate >= startDate &&
+      !getTripDurationMessage(startDate, endDate),
+  )
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+
+    setTouchedFields({
+      name: true,
+      startDate: true,
+      endDate: true,
+    })
+
+    if (!name.trim()) {
+      setError(t("tripForm.nameRequired"))
+      return
+    }
 
     if (!startDate || !endDate) {
       setError(t("tripForm.datesRequired"))
@@ -70,12 +103,22 @@ export function TripForm({ accessToken, onCreated, onCancel }: TripFormProps) {
         <label className="grid gap-2 text-sm font-medium text-muted">
           {t("tripForm.name")}
           <input
-            className="rounded-xl border border-border bg-surface px-3 py-2.5 text-ink outline-none focus:border-brand"
+            aria-describedby={nameError ? "trip-name-error" : undefined}
+            aria-invalid={Boolean(nameError)}
+            className={`rounded-xl border bg-surface px-3 py-2.5 text-ink outline-none focus:border-brand ${
+              nameError ? "border-error" : "border-border"
+            }`}
+            onBlur={() => setTouchedFields((current) => ({ ...current, name: true }))}
             onChange={(event) => setName(event.target.value)}
             placeholder={t("tripForm.namePlaceholder")}
             required
             value={name}
           />
+          {nameError && (
+            <p className="text-xs font-normal text-error" id="trip-name-error" role="alert">
+              {nameError}
+            </p>
+          )}
         </label>
         <label className="grid gap-2 text-sm font-medium text-muted">
           {t("tripForm.notes")}
@@ -88,8 +131,10 @@ export function TripForm({ accessToken, onCreated, onCancel }: TripFormProps) {
         </label>
         <div className="grid gap-4 sm:grid-cols-2">
           <DatePicker
+            error={startDateError}
             label={t("tripForm.startDate")}
             onChange={(date) => {
+              setTouchedFields((current) => ({ ...current, startDate: true }))
               setStartDate(date)
               const maximumEndDate = shiftDate(date, 59)
               if (!endDate || endDate < date) {
@@ -102,10 +147,14 @@ export function TripForm({ accessToken, onCreated, onCancel }: TripFormProps) {
             value={startDate}
           />
           <DatePicker
+            error={endDateError}
             label={t("tripForm.endDate")}
             maxDate={startDate ? shiftDate(startDate, 59) : undefined}
             minDate={startDate}
-            onChange={setEndDate}
+            onChange={(date) => {
+              setTouchedFields((current) => ({ ...current, endDate: true }))
+              setEndDate(date)
+            }}
             value={endDate}
           />
         </div>
@@ -121,7 +170,7 @@ export function TripForm({ accessToken, onCreated, onCancel }: TripFormProps) {
         </button>
         <button
           className="rounded-xl bg-brand-surface px-4 py-2.5 text-sm font-semibold text-on-brand hover:bg-brand-surface-hover disabled:opacity-60"
-          disabled={isSaving}
+          disabled={isSaving || !isFormValid}
           type="submit"
         >
           {isSaving ? t("tripForm.creating") : t("tripForm.create")}
