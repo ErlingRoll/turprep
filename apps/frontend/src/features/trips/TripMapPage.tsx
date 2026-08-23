@@ -32,7 +32,6 @@ export function TripMapPage({
   const { t } = useTranslation()
   const [searchParams] = useSearchParams()
   const [showBackupItems, setShowBackupItems] = useState(false)
-  const [selectedMarker, setSelectedMarker] = useState<TripMapMarker | null>(null)
   const markers = useMemo<TripMapMarker[]>(
     () => {
       const activeMarkers: TripMapMarker[] = [
@@ -220,25 +219,9 @@ export function TripMapPage({
           ) : undefined
         }
         markers={markers}
-        onMarkerClick={setSelectedMarker}
         onMarkerLocationSave={saveMarkerLocation}
         renderMarkerDetails={renderMarkerDetails}
       />
-      {fullScreen && selectedMarker && (
-        <div className="pointer-events-none fixed left-3 top-32 z-50 max-w-xs sm:left-5 sm:top-36">
-          <div className="pointer-events-auto rounded-2xl bg-surface/95 p-4 shadow-card backdrop-blur-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-              {selectedMarker.type === "activity"
-                ? t("tripMap.activity")
-                : selectedMarker.type === "meal"
-                  ? t("tripMap.meal")
-                  : t("tripMap.housing")}
-            </p>
-            <h2 className="mt-1 text-lg font-semibold text-brand">{selectedMarker.title}</h2>
-            <p className="mt-1 text-sm text-muted">{formatDate(selectedMarker.date)}</p>
-          </div>
-        </div>
-      )}
     </section>
   )
 }
