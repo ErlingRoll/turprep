@@ -231,6 +231,10 @@ const resources = {
         tripTooLong: "En reise kan ikke vare lenger enn {{maxDays}} dager.",
         tripDatesInvalid: "Sluttdatoen må være på eller etter startdatoen.",
       },
+      tripPresence: {
+        active: "Ser nå",
+        viewerFallback: "En deltaker",
+      },
       tripDetails: {
         activity: "Aktivitet",
         activities: "Aktiviteter",
@@ -604,6 +608,10 @@ const resources = {
         tripNotFound: "Trip not found.",
         tripTooLong: "A trip cannot be longer than {{maxDays}} days.",
         tripDatesInvalid: "The end date must be on or after the start date.",
+      },
+      tripPresence: {
+        active: "Viewing now",
+        viewerFallback: "A participant",
       },
       tripDetails: {
         activity: "activity",

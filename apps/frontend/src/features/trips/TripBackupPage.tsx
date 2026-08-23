@@ -33,6 +33,7 @@ import { formatDate } from "../../lib/date-format"
 import { shiftDate } from "../../lib/trip-dates"
 import { MobileDayPager } from "./MobileDayPager"
 import { SpreadsheetHeaderCell } from "./SpreadsheetCell"
+import { TripPresenceIndicator } from "./TripPresenceIndicator"
 import {
   getDraggedItemKey,
   getItineraryRowKey,
@@ -49,6 +50,7 @@ import {
 } from "./spreadsheet-time-validation"
 import { SpreadsheetItineraryRow } from "./SpreadsheetItineraryRow"
 import { TripDayNavigator } from "./TripDayNavigator"
+import { useTripPresence } from "./useTripPresence"
 import type {
   EditableField,
   ItemDraft,
@@ -120,6 +122,7 @@ export function TripBackupPage({
   const [desktopSaveError, setDesktopSaveError] = useState<string | null>(null)
   const desktopTableRef = useRef<HTMLTableElement>(null)
   const desktopDropTargetRef = useRef<SpreadsheetDropTarget | null>(null)
+  const presenceViewers = useTripPresence(trip.id)
 
   const allBackupActivities = trip.backupActivities
   const allBackupMeals = trip.meals.filter((meal) => meal.isBackup)
@@ -1326,6 +1329,7 @@ export function TripBackupPage({
               ))}
             </select>
           </label>
+          <TripPresenceIndicator className="mt-4" viewers={presenceViewers} />
         </div>
       </div>
       <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:items-start lg:gap-5">
@@ -1383,6 +1387,7 @@ export function TripBackupPage({
                     </p>
                     <h2 className="mt-1 text-2xl font-semibold text-brand">{t("spreadsheet.itinerary")}</h2>
                     <p className="mt-2 text-sm text-muted">{t("backup.subtitle")}</p>
+                    <TripPresenceIndicator className="mt-3" viewers={presenceViewers} />
                   </div>
                 </div>
                 <div className="relative mt-5 w-full overflow-x-auto">
