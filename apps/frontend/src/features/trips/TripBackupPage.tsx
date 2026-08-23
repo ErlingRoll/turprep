@@ -50,7 +50,7 @@ import {
 } from "./spreadsheet-time-validation"
 import { SpreadsheetItineraryRow } from "./SpreadsheetItineraryRow"
 import { TripDayNavigator } from "./TripDayNavigator"
-import { useTripPresence } from "./useTripPresence"
+import type { TripPresenceViewer } from "./useTripPresence"
 import type {
   EditableField,
   ItemDraft,
@@ -78,6 +78,7 @@ type TripBackupPageProps = {
   userId: string
   onTripUpdated: (trip: TripDetail) => void
   daySelection: TripDaySelection
+  presenceViewers: TripPresenceViewer[]
   showDetails: boolean
 }
 
@@ -87,6 +88,7 @@ export function TripBackupPage({
   userId,
   onTripUpdated,
   daySelection,
+  presenceViewers,
   showDetails,
 }: TripBackupPageProps) {
   const { t } = useTranslation()
@@ -122,8 +124,6 @@ export function TripBackupPage({
   const [desktopSaveError, setDesktopSaveError] = useState<string | null>(null)
   const desktopTableRef = useRef<HTMLTableElement>(null)
   const desktopDropTargetRef = useRef<SpreadsheetDropTarget | null>(null)
-  const presenceViewers = useTripPresence(trip.id)
-
   const allBackupActivities = trip.backupActivities
   const allBackupMeals = trip.meals.filter((meal) => meal.isBackup)
   const allBackupHousing = trip.housingStays.filter((stay) => stay.isBackup)

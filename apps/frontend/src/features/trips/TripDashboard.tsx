@@ -15,6 +15,7 @@ import { TravelMode } from "./TravelMode"
 import { useTripRealtime } from "./useTripRealtime"
 import { useTripDaySelection } from "./useTripDaySelection"
 import { DesktopTripNavbar } from "./DesktopTripNavbar"
+import { useTripPresence } from "./useTripPresence"
 import { LanguageSwitcher } from "../../components/LanguageSwitcher"
 import { MobileMenuButton } from "../../components/MobileMenuButton"
 import { ThemeToggle } from "../../components/ThemeToggle"
@@ -57,6 +58,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
   const isPlanMode = !isTravelMode && !isBackupMode && !isMapMode
   const hasValidTripId = Boolean(tripId && tripId !== ":tripId")
   const isDesktop = useIsDesktop()
+  const presenceViewers = useTripPresence(hasValidTripId ? tripId : undefined)
   const [trips, setTrips] = useState<Trip[]>([])
   const [selectedTrip, setSelectedTrip] = useState<TripDetail | null>(null)
   const [search, setSearch] = useState("")
@@ -220,6 +222,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
         trip={selectedTrip}
         userId={session.user.id}
         daySelection={daySelection}
+        presenceViewers={presenceViewers}
         showDetails={showItemDetails}
       />
     )
@@ -252,7 +255,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
         isPlanMode={isPlanMode}
         isTravelMode={isTravelMode}
         onSignOut={() => void signOut()}
-        trip={selectedTrip}
+        presenceViewers={presenceViewers}
         tripId={hasValidTripId ? tripId : undefined}
       />
       <nav className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5 sm:px-8 lg:hidden">
@@ -374,6 +377,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
               accessToken={session.access_token}
               daySelection={daySelection}
               onTripUpdated={handleTripUpdated}
+              presenceViewers={presenceViewers}
               showDetails={showItemDetails}
               trip={selectedTrip}
               userId={session.user.id}

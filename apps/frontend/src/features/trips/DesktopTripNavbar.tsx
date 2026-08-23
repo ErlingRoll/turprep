@@ -2,8 +2,9 @@ import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 import { LanguageSwitcher } from "../../components/LanguageSwitcher"
 import { ThemeToggle } from "../../components/ThemeToggle"
-import { formatDateRange } from "../../lib/date-format"
 import { PRODUCT_NAME } from "../../lib/brand"
+import { TripPresenceIndicator } from "./TripPresenceIndicator"
+import type { TripPresenceViewer } from "./useTripPresence"
 
 type DesktopTripNavbarProps = {
   email: string | undefined
@@ -11,11 +12,7 @@ type DesktopTripNavbarProps = {
   isPlanMode: boolean
   isTravelMode: boolean
   onSignOut: () => void
-  trip: {
-    endDate: string
-    name: string
-    startDate: string
-  } | null
+  presenceViewers: TripPresenceViewer[]
   tripId: string | undefined
 }
 
@@ -25,7 +22,7 @@ export function DesktopTripNavbar({
   isPlanMode,
   isTravelMode,
   onSignOut,
-  trip,
+  presenceViewers,
   tripId,
 }: DesktopTripNavbarProps) {
   const { t } = useTranslation()
@@ -42,11 +39,11 @@ export function DesktopTripNavbar({
             <span>{PRODUCT_NAME}</span>
           </Link>
 
-          {trip && (
-            <div className="min-w-0 border-l border-border pl-5">
-              <p className="truncate text-sm font-semibold text-on-surface">{trip.name}</p>
-              <p className="truncate text-xs text-muted">{formatDateRange(trip)}</p>
-            </div>
+          {tripId && (
+            <TripPresenceIndicator
+              className="min-w-0 border-l border-border pl-5"
+              viewers={presenceViewers}
+            />
           )}
 
           <div className="ml-auto flex shrink-0 items-center gap-3">

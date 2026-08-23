@@ -42,7 +42,7 @@ import { TripMap, type TripMapMarker } from "./TripMap"
 import { TripMapMarkerDetails } from "./TripMapMarkerDetails"
 import { MobileDayPager } from "./MobileDayPager"
 import { useTripRealtime } from "./useTripRealtime"
-import { useTripPresence } from "./useTripPresence"
+import type { TripPresenceViewer } from "./useTripPresence"
 import { type ItemDetailValues } from "../../components/ItemDetails"
 import type { TripDaySelection } from "./useTripDaySelection"
 import type { DayItemRecord, DropTarget, MovingItem, PlannerTab } from "./planner-types"
@@ -58,6 +58,7 @@ type TripDetailsProps = {
   onTripDeleted: (trip: TripDetail) => Promise<void>
   userId: string
   daySelection: TripDaySelection
+  presenceViewers: TripPresenceViewer[]
   showDetails: boolean
 }
 
@@ -88,6 +89,7 @@ export function TripDetails({
   onTripDeleted,
   userId,
   daySelection,
+  presenceViewers,
   showDetails,
 }: TripDetailsProps) {
   const { t } = useTranslation()
@@ -125,8 +127,6 @@ export function TripDetails({
   const pendingReorderCountRef = useRef(0)
   const reorderGenerationRef = useRef(0)
   const { selectedDayDate, selectedDayDates, onSelectAll, onSelectDay, onToggleDay } = daySelection
-  const presenceViewers = useTripPresence(trip?.id)
-
   useEffect(() => {
     if (!mapFocusRequest) {
       return
