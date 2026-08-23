@@ -343,7 +343,7 @@ export const DayItemTypeSchema = z.enum(["activity", "meal"])
 export const ReorderDayItemInputSchema = z.object({
   itemType: DayItemTypeSchema,
   itemId: z.string().min(1),
-  tripDate: DateOnlySchema,
+  tripDate: DateOnlySchema.nullable(),
   sortOrder: z.number().int().nonnegative(),
   startTime: TimeOnlySchema.nullable().optional(),
   endTime: TimeOnlySchema.nullable().optional(),

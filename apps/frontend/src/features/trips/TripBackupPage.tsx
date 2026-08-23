@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState, type DragEvent, type FormEvent } from "react"
+import { Fragment, useEffect, useRef, useState, type DragEvent, type FormEvent } from "react"
 import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
 import {
@@ -33,7 +33,6 @@ import { formatDate } from "../../lib/date-format"
 import { shiftDate } from "../../lib/trip-dates"
 import { MobileDayPager } from "./MobileDayPager"
 import { SpreadsheetHeaderCell } from "./SpreadsheetCell"
-import { TripPresenceIndicator } from "./TripPresenceIndicator"
 import {
   getDraggedItemKey,
   getItineraryRowKey,
@@ -41,6 +40,11 @@ import {
   isDragBlockedTarget,
   setSpreadsheetDragData,
 } from "./spreadsheet-drag"
+import {
+  calculateSpreadsheetReorder,
+  queueSpreadsheetReorder,
+  type SpreadsheetItemTimeUpdate,
+} from "./spreadsheet-reorder"
 import { getSpreadsheetItemDraft } from "./spreadsheet-item-draft"
 import {
   applyDefaultEndTimeForStartEdit,
@@ -50,7 +54,6 @@ import {
 } from "./spreadsheet-time-validation"
 import { SpreadsheetItineraryRow } from "./SpreadsheetItineraryRow"
 import { TripDayNavigator } from "./TripDayNavigator"
-import type { TripPresenceViewer } from "./useTripPresence"
 import type {
   EditableField,
   ItemDraft,
@@ -70,15 +73,21 @@ type BackupItem = Activity | Meal | HousingStay
 type BackupEntry = { type: BackupType; item: BackupItem }
 type BackupPlannerType = "activity" | "meal"
 type BackupPlannerRow = ItineraryRow
-type DesktopBackupGroup = { id: string; label: string; rows: BackupPlannerRow[]; date: string | null }
+type DesktopBackupGroup = {
+  id: string
+  label: string
+  rows: BackupPlannerRow[]
+  date: string | null
+  title: string | null
+}
 
 type TripBackupPageProps = {
   accessToken: string
   trip: TripDetail
   userId: string
   onTripUpdated: (trip: TripDetail) => void
+  onReorderPendingChange: (isPending: boolean) => void
   daySelection: TripDaySelection
-  presenceViewers: TripPresenceViewer[]
   showDetails: boolean
 }
 
@@ -87,8 +96,8 @@ export function TripBackupPage({
   trip,
   userId,
   onTripUpdated,
+  onReorderPendingChange,
   daySelection,
-  presenceViewers,
   showDetails,
 }: TripBackupPageProps) {
   const { t } = useTranslation()
@@ -122,8 +131,13 @@ export function TripBackupPage({
   const [desktopEditingFieldKey, setDesktopEditingFieldKey] = useState<string | null>(null)
   const [desktopDraft, setDesktopDraft] = useState<ItemDraft | null>(null)
   const [desktopSaveError, setDesktopSaveError] = useState<string | null>(null)
+  const [isReordering, setIsReordering] = useState(false)
   const desktopTableRef = useRef<HTMLTableElement>(null)
   const desktopDropTargetRef = useRef<SpreadsheetDropTarget | null>(null)
+  const latestTripRef = useRef(trip)
+  const reorderQueueRef = useRef(Promise.resolve())
+  const pendingReorderCountRef = useRef(0)
+  const reorderGenerationRef = useRef(0)
   const allBackupActivities = trip.backupActivities
   const allBackupMeals = trip.meals.filter((meal) => meal.isBackup)
   const allBackupHousing = trip.housingStays.filter((stay) => stay.isBackup)
@@ -133,6 +147,12 @@ export function TripBackupPage({
     selectedDayDates.length > 0 ? selectedDayDates : selectedDay ? [selectedDay.date] : []
   const areAllDaysSelected =
     trip.days.length > 0 && trip.days.every((day) => datesForFiltering.includes(day.date))
+
+  useEffect(() => {
+    if (pendingReorderCountRef.current === 0) {
+      latestTripRef.current = trip
+    }
+  }, [trip])
 
   function isDateSelected(date: string | null) {
     return date === null || datesForFiltering.includes(date)
@@ -659,6 +679,7 @@ export function TripBackupPage({
       const optimisticTrip = getOptimisticBackupTrip(
         trip,
         new Map([[dayGroup.id, optimisticRows]]),
+        new Map(),
       )
       onTripUpdated(optimisticTrip)
       setDesktopEditingFieldKey(null)
@@ -875,7 +896,6 @@ export function TripBackupPage({
                     <TimePicker
                       label={t("common.to")}
                       onChange={handleEndTimeChange}
-                      showLabel={false}
                       value={endTime}
                     />
                   )}
@@ -1040,6 +1060,21 @@ export function TripBackupPage({
     }))
   }
 
+  function getBackupPlannerRows(baseTrip: TripDetail, groupId: string) {
+    const activities = baseTrip.backupActivities
+      .filter((activity) => (groupId === "undated" ? activity.tripDate === null : activity.tripDate === groupId))
+      .map((activity) => ({ item: activity, type: "activity" as const }))
+    const meals = baseTrip.meals
+      .filter(
+        (meal) =>
+          meal.isBackup &&
+          (groupId === "undated" ? meal.tripDate === null : meal.tripDate === groupId),
+      )
+      .map((meal) => ({ item: meal, type: "meal" as const }))
+
+    return sortBackupPlannerRows([...activities, ...meals])
+  }
+
   const showPrice = showDetails && trip.itemDetailVisibility.showPrice
   const showWebsite = showDetails && trip.itemDetailVisibility.showWebsite
   const itineraryColumnCount = 5 + (showPrice ? 2 : 0) + (showWebsite ? 1 : 0)
@@ -1075,25 +1110,26 @@ export function TripBackupPage({
         label: formatDate(day.date),
         rows: sortBackupPlannerRows(datedRows.get(day.date) ?? []),
         date: day.date,
+        title: day.title,
       }))
-      .filter((group) => group.rows.length > 0)
+      .filter((group) => group.rows.length > 0 || datesForFiltering.includes(group.date))
 
     if (undatedRows.length > 0) {
-      groups.push({
+      groups.unshift({
         id: "undated",
         label: t("backup.noTentativeDate"),
         rows: sortBackupPlannerRows(undatedRows),
         date: null,
+        title: null,
       })
     }
 
     return groups
   })()
-  const desktopGroupById = new Map(desktopBackupGroups.map((group) => [group.id, group]))
   const desktopDropLineBounds = desktopTableRef.current?.getBoundingClientRect()
   const desktopDraggedItemKey = desktopDraggedItem ? getDraggedItemKey(desktopDraggedItem) : null
   const desktopDraggedSourceRows = desktopDraggedItem
-    ? desktopGroupById.get(desktopDraggedItem.dayDate)?.rows ?? []
+    ? getBackupPlannerRows(latestTripRef.current, desktopDraggedItem.dayDate)
     : []
   const desktopDraggedSourceIndex = desktopDraggedItemKey
     ? desktopDraggedSourceRows.findIndex((row) => getItineraryRowKey(row) === desktopDraggedItemKey)
@@ -1122,21 +1158,20 @@ export function TripBackupPage({
   function getOptimisticBackupTrip(
     baseTrip: TripDetail,
     rowsByGroupId: Map<string, BackupPlannerRow[]>,
+    timeUpdates: Map<string, SpreadsheetItemTimeUpdate>,
   ): TripDetail {
     const activityUpdates = new Map<string, Activity>()
     const mealUpdates = new Map<string, Meal>()
 
     rowsByGroupId.forEach((rows, groupId) => {
-      const group = desktopGroupById.get(groupId)
-      if (!group) {
-        return
-      }
+      const groupDate = groupId === "undated" ? null : groupId
 
       rows.forEach((row, sortOrder) => {
         const update = {
           ...row.item,
           sortOrder,
-          tripDate: group.date,
+          tripDate: groupDate,
+          ...(timeUpdates.get(getItineraryRowKey(row)) ?? {}),
         }
         if (row.type === "activity") {
           activityUpdates.set(row.item.id, update as Activity)
@@ -1155,12 +1190,41 @@ export function TripBackupPage({
     }
   }
 
+  function queueDesktopReorder(
+    optimisticTrip: TripDetail,
+    rowsByGroupId: Map<string, BackupPlannerRow[]>,
+    timeUpdates: Map<string, SpreadsheetItemTimeUpdate>,
+  ) {
+    queueSpreadsheetReorder({
+      accessToken,
+      groupDates: new Map(
+        Array.from(rowsByGroupId.keys()).map((groupId) => [
+          groupId,
+          groupId === "undated" ? null : groupId,
+        ]),
+      ),
+      onError: addToast,
+      onPendingChange: (isPending) => {
+        setIsReordering(isPending)
+        onReorderPendingChange(isPending)
+      },
+      onTripUpdated,
+      latestTripRef,
+      optimisticTrip,
+      pendingCountRef: pendingReorderCountRef,
+      queueRef: reorderQueueRef,
+      reorderGenerationRef,
+      rowsByGroupId,
+      timeUpdates,
+    })
+  }
+
   function handleDesktopDragStart(
     event: DragEvent<HTMLTableRowElement>,
     dayDate: string,
     row: BackupPlannerRow,
   ) {
-    if (isDragBlockedTarget(event.target) || isSaving) {
+    if (isDragBlockedTarget(event.target)) {
       event.preventDefault()
       return
     }
@@ -1219,7 +1283,7 @@ export function TripBackupPage({
     setDesktopDraggedItem(null)
     setDesktopDropTarget(null)
 
-    if (!draggedKey || !selectedDropTarget || isSaving) {
+    if (!draggedKey || !selectedDropTarget) {
       return
     }
 
@@ -1230,79 +1294,34 @@ export function TripBackupPage({
       return
     }
 
-    const sourceRows = desktopGroupById.get(sourceGroupId)?.rows ?? []
-    const sourceIndex = sourceRows.findIndex((row) => getItineraryRowKey(row) === draggedKey)
-    const targetRows = desktopGroupById.get(targetGroupId)?.rows ?? []
+    const currentTrip = latestTripRef.current
+    const sourceRows = getBackupPlannerRows(currentTrip, sourceGroupId)
+    const targetRows = getBackupPlannerRows(currentTrip, targetGroupId)
 
-    if (sourceIndex < 0 || targetRows.length === 0) {
+    const reorderResult = calculateSpreadsheetReorder({
+      draggedKey,
+      sourceGroupId,
+      sourceRows,
+      targetGroupId,
+      targetIndex: selectedDropTarget.index,
+      targetRows,
+    })
+    if (!reorderResult) {
+      return
+    }
+    if ("error" in reorderResult) {
+      addToast(t("spreadsheet.reorderTimeRangeError"))
       return
     }
 
-    const isSameGroup = sourceGroupId === targetGroupId
-    const targetRowsWithoutDraggedItem = targetRows.filter(
-      (row) => getItineraryRowKey(row) !== draggedKey,
+    const optimisticTrip = getOptimisticBackupTrip(
+      latestTripRef.current,
+      reorderResult.rowsByGroupId,
+      reorderResult.timeUpdates,
     )
-    const adjustedTargetIndex =
-      isSameGroup && sourceIndex < selectedDropTarget.index
-        ? selectedDropTarget.index - 1
-        : selectedDropTarget.index
-    const insertionIndex = Math.max(
-      0,
-      Math.min(adjustedTargetIndex, targetRowsWithoutDraggedItem.length),
-    )
-    const movedRow = sourceRows[sourceIndex]
-    const nextTargetRows = [
-      ...targetRowsWithoutDraggedItem.slice(0, insertionIndex),
-      movedRow,
-      ...targetRowsWithoutDraggedItem.slice(insertionIndex),
-    ]
-
-    if (isSameGroup && insertionIndex === sourceIndex) {
-      return
-    }
-
-    const rowsByGroupId = new Map<string, BackupPlannerRow[]>()
-    if (isSameGroup) {
-      rowsByGroupId.set(sourceGroupId, nextTargetRows)
-    } else {
-      rowsByGroupId.set(
-        sourceGroupId,
-        sourceRows.filter((row) => getItineraryRowKey(row) !== draggedKey),
-      )
-      rowsByGroupId.set(targetGroupId, nextTargetRows)
-    }
-
-    const optimisticTrip = getOptimisticBackupTrip(trip, rowsByGroupId)
+    latestTripRef.current = optimisticTrip
     onTripUpdated(optimisticTrip)
-    setFormError(null)
-    setIsSaving(true)
-
-    try {
-      const saveRequests = Array.from(rowsByGroupId.entries()).flatMap(([groupId, rows]) => {
-        const group = desktopGroupById.get(groupId)
-        if (!group) {
-          return []
-        }
-
-        return rows.map((row, sortOrder) =>
-          row.type === "activity"
-            ? updateActivity(accessToken, trip.id, row.item.id, {
-                sortOrder,
-                tripDate: group.date,
-              })
-            : updateMeal(accessToken, trip.id, row.item.id, {
-                sortOrder,
-                tripDate: group.date,
-              }),
-        )
-      })
-      await Promise.all(saveRequests)
-    } catch (reason: unknown) {
-      onTripUpdated(trip)
-      setFormError(getErrorMessage(reason))
-    } finally {
-      setIsSaving(false)
-    }
+    queueDesktopReorder(optimisticTrip, reorderResult.rowsByGroupId, reorderResult.timeUpdates)
   }
 
   const sections: Array<{ type: BackupType; label: string; items: BackupItem[] }> = [
@@ -1329,7 +1348,6 @@ export function TripBackupPage({
               ))}
             </select>
           </label>
-          <TripPresenceIndicator className="mt-4" viewers={presenceViewers} />
         </div>
       </div>
       <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:items-start lg:gap-5">
@@ -1387,12 +1405,12 @@ export function TripBackupPage({
                     </p>
                     <h2 className="mt-1 text-2xl font-semibold text-brand">{t("spreadsheet.itinerary")}</h2>
                     <p className="mt-2 text-sm text-muted">{t("backup.subtitle")}</p>
-                    <TripPresenceIndicator className="mt-3" viewers={presenceViewers} />
                   </div>
                 </div>
                 <div className="relative mt-5 w-full overflow-x-auto">
                   <div className="w-full min-w-0 rounded-2xl border border-border-card bg-surface">
                     <table
+                      aria-busy={isReordering}
                       className="w-full min-w-[56rem] table-fixed border-collapse text-left"
                       ref={desktopTableRef}
                     >
@@ -1451,7 +1469,20 @@ export function TripBackupPage({
                                   colSpan={itineraryColumnCount}
                                 >
                                   <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <span>{group.label}</span>
+                                    {group.date === null ? (
+                                      <span>{group.label}</span>
+                                    ) : (
+                                      <div className="flex min-w-0 flex-1 items-baseline gap-1">
+                                        <span className="w-29 shrink-0 text-brand">{group.label}</span>
+                                        <span
+                                          className={`w-56 min-w-0 break-words text-left !text-lg font-semibold ${
+                                            group.title?.trim() ? "text-on-surface" : "text-muted"
+                                          }`}
+                                        >
+                                          {group.title?.trim() || t("tripDetails.dayTitle")}
+                                        </span>
+                                      </div>
+                                    )}
                                     <span className="flex flex-wrap gap-2 normal-case tracking-normal">
                                       <button
                                         className="rounded-lg border border-border px-2 py-1 text-xs font-semibold text-muted hover:border-brand hover:text-brand disabled:opacity-50"
@@ -1482,55 +1513,70 @@ export function TripBackupPage({
                                     </td>
                                   </tr>
                                 )}
-                              {group.rows.map(({ type, item }, itemIndex) => {
-                                const key = `${type}:${item.id}`
-                                const displayedDate = item.tripDate
-                                  ? formatDate(item.tripDate)
-                                  : t("backup.noTentativeDate")
-                                const activeField = desktopEditingFieldKey?.startsWith(`${key}:`)
-                                  ? (desktopEditingFieldKey.slice(key.length + 1) as EditableField)
-                                  : null
-                                return (
-                                  <SpreadsheetItineraryRow
-                                    key={key}
-                                    activeField={activeField}
-                                    dateLabel={displayedDate}
-                                    dayDate={group.id}
-                                    draft={desktopDraft}
-                                    isHousingEditing={false}
-                                    isSaving={isSaving}
-                                    item={item}
-                                    itemIndex={itemIndex}
-                                    itineraryColumnCount={itineraryColumnCount}
-                                    moveActionLabel={t("backup.moveToPlan")}
-                                    onCancelEditing={cancelDesktopEditing}
-                                    onDragEnd={handleDesktopDragEnd}
-                                    onDragOver={handleDesktopDragOver}
-                                    onDragStart={handleDesktopDragStart}
-                                    onDrop={handleDesktopDrop}
-                                    onMoveToBackup={(rowType, rowItem) => {
-                                      void moveToPlan({ item: rowItem, type: rowType })
-                                    }}
-                                    onPreferenceChange={(itemType, itemId, value) => {
-                                      void handlePreferenceChange(itemType, itemId, value)
-                                    }}
-                                    onSaveField={(rowType, rowItem, field, nextDraft) => {
-                                      void saveDesktopEditingField(rowType, rowItem, field, nextDraft)
-                                    }}
-                                    onSaveGoogleMapsUrl={saveBackupItemGoogleMapsUrl}
-                                    onSetPendingDeletion={(deletion) => setPendingDeletion(deletion)}
-                                    onStartEditing={startDesktopEditing}
-                                    onUpdateDraft={setDesktopDraft}
-                                    preferences={trip.preferences}
-                                    saveError={desktopSaveError}
-                                    savingPreferenceKey={savingPreferenceKey}
-                                    showPrice={showPrice}
-                                    showWebsite={showWebsite}
-                                    type={type}
-                                    userId={userId}
-                                  />
-                                )
-                              })}
+                              {group.rows.length === 0 ? (
+                                <tr
+                                  data-drop-empty-day={group.id}
+                                  onDragOver={(event) => handleDesktopDragOver(event, group.id)}
+                                  onDrop={(event) => void handleDesktopDrop(event)}
+                                >
+                                  <td
+                                    className="border-b border-border-divider px-3 py-2 text-sm text-muted"
+                                    colSpan={itineraryColumnCount}
+                                  >
+                                    {t("spreadsheet.noItems")}
+                                  </td>
+                                </tr>
+                              ) : (
+                                group.rows.map(({ type, item }, itemIndex) => {
+                                  const key = `${type}:${item.id}`
+                                  const displayedDate = item.tripDate
+                                    ? formatDate(item.tripDate)
+                                    : t("backup.noTentativeDate")
+                                  const activeField = desktopEditingFieldKey?.startsWith(`${key}:`)
+                                    ? (desktopEditingFieldKey.slice(key.length + 1) as EditableField)
+                                    : null
+                                  return (
+                                    <SpreadsheetItineraryRow
+                                      key={key}
+                                      activeField={activeField}
+                                      dateLabel={displayedDate}
+                                      dayDate={group.id}
+                                      draft={desktopDraft}
+                                      isHousingEditing={false}
+                                      isSaving={isSaving}
+                                      item={item}
+                                      itemIndex={itemIndex}
+                                      itineraryColumnCount={itineraryColumnCount}
+                                      moveActionLabel={t("backup.moveToPlan")}
+                                      onCancelEditing={cancelDesktopEditing}
+                                      onDragEnd={handleDesktopDragEnd}
+                                      onDragOver={handleDesktopDragOver}
+                                      onDragStart={handleDesktopDragStart}
+                                      onDrop={handleDesktopDrop}
+                                      onMoveToBackup={(rowType, rowItem) => {
+                                        void moveToPlan({ item: rowItem, type: rowType })
+                                      }}
+                                      onPreferenceChange={(itemType, itemId, value) => {
+                                        void handlePreferenceChange(itemType, itemId, value)
+                                      }}
+                                      onSaveField={(rowType, rowItem, field, nextDraft) => {
+                                        void saveDesktopEditingField(rowType, rowItem, field, nextDraft)
+                                      }}
+                                      onSaveGoogleMapsUrl={saveBackupItemGoogleMapsUrl}
+                                      onSetPendingDeletion={(deletion) => setPendingDeletion(deletion)}
+                                      onStartEditing={startDesktopEditing}
+                                      onUpdateDraft={setDesktopDraft}
+                                      preferences={trip.preferences}
+                                      saveError={desktopSaveError}
+                                      savingPreferenceKey={savingPreferenceKey}
+                                      showPrice={showPrice}
+                                      showWebsite={showWebsite}
+                                      type={type}
+                                      userId={userId}
+                                    />
+                                  )
+                                })
+                              )}
                             </Fragment>
                           ))
                         )}

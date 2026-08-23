@@ -49,7 +49,7 @@ export function getNearestSpreadsheetDropTarget(
           }
 
           const bounds = emptyRow.getBoundingClientRect()
-          return [{ index: 0, lineY: bounds.top + bounds.height / 2 }]
+          return [{ index: 0, lineY: bounds.top }]
         })()
 
   return landingZones.reduce<SpreadsheetDropTarget | null>((nearest, zone) => {

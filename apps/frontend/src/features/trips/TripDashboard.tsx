@@ -223,7 +223,6 @@ export function TripDashboard({ session }: TripDashboardProps) {
         trip={selectedTrip}
         userId={session.user.id}
         daySelection={daySelection}
-        presenceViewers={presenceViewers}
         showDetails={showItemDetails}
       />
     )
@@ -375,8 +374,8 @@ export function TripDashboard({ session }: TripDashboardProps) {
             <TripBackupPage
               accessToken={session.access_token}
               daySelection={daySelection}
+              onReorderPendingChange={setIsDesktopReordering}
               onTripUpdated={handleTripUpdated}
-              presenceViewers={presenceViewers}
               showDetails={showItemDetails}
               trip={selectedTrip}
               userId={session.user.id}

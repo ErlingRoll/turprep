@@ -1336,6 +1336,29 @@ test("authenticated users can reorder activities and meals together", async () =
   assert.equal(response.body.meals[0].sortOrder, 0)
 })
 
+test("backup day items can be reordered without a date", async () => {
+  const backupActivity = { ...testActivity, id: "backup-activity", tripDate: null, isBackup: true }
+  const response = await request(
+    createTestApp(undefined, { ...testTripDetail, backupActivities: [backupActivity] }),
+  )
+    .patch("/api/trips/trip-1/day-items/reorder")
+    .set("Authorization", "Bearer valid-token")
+    .send({
+      items: [
+        {
+          itemType: "activity",
+          itemId: "backup-activity",
+          tripDate: null,
+          sortOrder: 0,
+        },
+      ],
+    })
+
+  assert.equal(response.status, 200)
+  assert.equal(response.body.activities[0].id, "backup-activity")
+  assert.equal(response.body.activities[0].tripDate, null)
+})
+
 test("day item reorder rejects timed items in reverse order", async () => {
   const response = await request(createTestApp(undefined, timedTripDetail))
     .patch("/api/trips/trip-1/day-items/reorder")

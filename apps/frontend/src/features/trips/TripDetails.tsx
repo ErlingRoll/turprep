@@ -42,7 +42,6 @@ import { TripMap, type TripMapMarker } from "./TripMap"
 import { TripMapMarkerDetails } from "./TripMapMarkerDetails"
 import { MobileDayPager } from "./MobileDayPager"
 import { useTripRealtime } from "./useTripRealtime"
-import type { TripPresenceViewer } from "./useTripPresence"
 import { type ItemDetailValues } from "../../components/ItemDetails"
 import type { TripDaySelection } from "./useTripDaySelection"
 import type { DayItemRecord, DropTarget, MovingItem, PlannerTab } from "./planner-types"
@@ -58,7 +57,6 @@ type TripDetailsProps = {
   onTripDeleted: (trip: TripDetail) => Promise<void>
   userId: string
   daySelection: TripDaySelection
-  presenceViewers: TripPresenceViewer[]
   showDetails: boolean
 }
 
@@ -89,7 +87,6 @@ export function TripDetails({
   onTripDeleted,
   userId,
   daySelection,
-  presenceViewers,
   showDetails,
 }: TripDetailsProps) {
   const { t } = useTranslation()
@@ -1282,7 +1279,6 @@ export function TripDetails({
     <div className="mt-6">
       <TripDetailsHeader
         onToggleSettings={() => setShowSettings((current) => !current)}
-        presenceViewers={presenceViewers}
         showSettings={showSettings}
         trip={trip}
       />

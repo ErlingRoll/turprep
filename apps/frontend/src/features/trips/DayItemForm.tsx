@@ -135,7 +135,6 @@ export function DayItemForm({
             <TimePicker
               label={t("common.to")}
               onChange={onEndTimeChange}
-              showLabel={false}
               value={endTime}
             />
           )}

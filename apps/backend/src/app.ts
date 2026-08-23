@@ -95,7 +95,9 @@ function getReorderedItemStartTime(trip: TripDetail, item: ReorderDayItemInput) 
   const dayItem =
     item.itemType === "meal"
       ? trip.meals.find((meal) => meal.id === item.itemId)
-      : trip.days.flatMap((day) => day.activities).find((activity) => activity.id === item.itemId)
+      : [...trip.days.flatMap((day) => day.activities), ...trip.backupActivities].find(
+          (activity) => activity.id === item.itemId,
+        )
 
   if (!dayItem || dayItem.allDay) {
     return null
@@ -1682,7 +1684,11 @@ export function createApp(dependencies: AppDependencies = {}) {
           return
         }
 
-        if (parsedInput.data.items.some((item) => !isDateWithinTrip(trip, item.tripDate))) {
+        if (
+          parsedInput.data.items.some(
+            (item) => item.tripDate !== null && !isDateWithinTrip(trip, item.tripDate),
+          )
+        ) {
           response.status(400).json({
             message: "The day item date must be within the trip dates",
           })

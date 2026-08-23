@@ -10,15 +10,12 @@ import {
   deleteMeal,
   updateActivity,
   updateTripDay,
-  getTrip,
   updateHousingStay,
   updateMeal,
-  reorderDayItems,
   setTripItemPreference,
   type Activity,
   type HousingStay,
   type Meal,
-  type ReorderDayItemInput,
   type TripDetail,
 } from "../../api"
 import { ConfirmDialog } from "../../components/ConfirmDialog"
@@ -46,6 +43,11 @@ import {
   isDragBlockedTarget,
   setSpreadsheetDragData,
 } from "./spreadsheet-drag"
+import {
+  calculateSpreadsheetReorder,
+  queueSpreadsheetReorder,
+  type SpreadsheetItemTimeUpdate,
+} from "./spreadsheet-reorder"
 import { SpreadsheetHousingContent } from "./SpreadsheetHousingContent"
 import { SpreadsheetItineraryRow } from "./SpreadsheetItineraryRow"
 import { getSpreadsheetItemDraft } from "./spreadsheet-item-draft"
@@ -103,62 +105,6 @@ const housingEditableFields: HousingEditableField[] = [
   "price",
   "website",
 ]
-
-type ItemTimeUpdate = {
-  endTime: string | null
-  startTime: string | null
-}
-
-function getTimeMinutes(time: string) {
-  const [hours, minutes] = time.split(":").map(Number)
-  return hours * 60 + minutes
-}
-
-function formatTimeMinutes(totalMinutes: number) {
-  const hours = Math.floor(totalMinutes / 60)
-  const minutes = totalMinutes % 60
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`
-}
-
-function getTimeAnchor(item: Activity | Meal) {
-  if (item.allDay) {
-    return null
-  }
-
-  return item.startTime ?? item.endTime
-}
-
-function rebaseItemTime(item: Activity | Meal, startTime: string): ItemTimeUpdate | null {
-  if (!getTimeAnchor(item)) {
-    return null
-  }
-
-  if (!item.startTime) {
-    return {
-      endTime: startTime,
-      startTime: null,
-    }
-  }
-
-  if (!item.endTime) {
-    return {
-      endTime: null,
-      startTime,
-    }
-  }
-
-  const duration = getTimeMinutes(item.endTime) - getTimeMinutes(item.startTime)
-  const endMinutes = getTimeMinutes(startTime) + duration
-
-  if (endMinutes > 23 * 60 + 59) {
-    return null
-  }
-
-  return {
-    endTime: formatTimeMinutes(endMinutes),
-    startTime,
-  }
-}
 
 function getItineraryRows(trip: TripDetail, date: string): ItineraryRow[] {
   const day = trip.days.find((currentDay) => currentDay.date === date)
@@ -347,19 +293,6 @@ export function TripSpreadsheetPage({
     }
   }
 
-  function getReorderInput(nextTrip: TripDetail): ReorderDayItemInput[] {
-    return nextTrip.days.flatMap((day) =>
-      getItineraryRows(nextTrip, day.date).map(({ item, type }, sortOrder) => ({
-        itemId: item.id,
-        itemType: type,
-        tripDate: day.date,
-        sortOrder,
-        startTime: item.startTime,
-        endTime: item.endTime,
-      })),
-    )
-  }
-
   function startCreatingItem(dayDate: string, itemType: ItineraryRow["type"]) {
     if (isSaving) {
       return
@@ -494,7 +427,7 @@ export function TripSpreadsheetPage({
 
       latestTripRef.current = optimisticTrip
       onTripUpdated(optimisticTrip)
-      queueReorder(optimisticTrip)
+      queueReorder(optimisticTrip, new Map([[dayDate, normalizedRows]]), new Map())
       setCreatingDayDate(null)
       setCreateDraft(getCreateItemDraft())
       setCreateError(null)
@@ -686,7 +619,7 @@ export function TripSpreadsheetPage({
   function getOptimisticReorderedTrip(
     baseTrip: TripDetail,
     rowsByDate: Map<string, ItineraryRow[]>,
-    timeUpdates: Map<string, ItemTimeUpdate>,
+    timeUpdates: Map<string, SpreadsheetItemTimeUpdate>,
   ): TripDetail {
     const rowByItemKey = new Map<
       string,
@@ -789,54 +722,26 @@ export function TripSpreadsheetPage({
     setDropTarget(null)
   }
 
-  function queueReorder(optimisticTrip: TripDetail) {
-    const reorderGeneration = ++reorderGenerationRef.current
-    if (pendingReorderCountRef.current === 0) {
-      onReorderPendingChange(true)
-    }
-    pendingReorderCountRef.current += 1
-    const queuedRequest = reorderQueueRef.current.then(() =>
-      reorderDayItems(accessToken, optimisticTrip.id, getReorderInput(optimisticTrip)).then(
-        () => undefined,
-      ),
-    )
-    reorderQueueRef.current = queuedRequest.catch(() => undefined)
-
-    void queuedRequest
-      .then(() => {
-        if (reorderGeneration === reorderGenerationRef.current) {
-          setReorderError(null)
-        }
-      })
-      .catch(async (reason: unknown) => {
-        setReorderError(getErrorMessage(reason))
-
-        if (
-          pendingReorderCountRef.current > 1 ||
-          reorderGeneration !== reorderGenerationRef.current
-        ) {
-          return
-        }
-
-        try {
-          const refreshedTrip = await getTrip(accessToken, optimisticTrip.id)
-          latestTripRef.current = refreshedTrip
-          if (
-            pendingReorderCountRef.current === 1 &&
-            reorderGeneration === reorderGenerationRef.current
-          ) {
-            onTripUpdated(refreshedTrip)
-          }
-        } catch (refreshReason: unknown) {
-          setReorderError(`${getErrorMessage(reason)} ${getErrorMessage(refreshReason)}`)
-        }
-      })
-      .finally(() => {
-        pendingReorderCountRef.current -= 1
-        if (pendingReorderCountRef.current === 0) {
-          onReorderPendingChange(false)
-        }
-      })
+  function queueReorder(
+    optimisticTrip: TripDetail,
+    rowsByDate: Map<string, ItineraryRow[]>,
+    timeUpdates: Map<string, SpreadsheetItemTimeUpdate>,
+  ) {
+    queueSpreadsheetReorder({
+      accessToken,
+      groupDates: new Map(Array.from(rowsByDate.keys()).map((date) => [date, date])),
+      onError: setReorderError,
+      onPendingChange: onReorderPendingChange,
+      onSuccess: () => setReorderError(null),
+      onTripUpdated,
+      latestTripRef,
+      optimisticTrip,
+      pendingCountRef: pendingReorderCountRef,
+      queueRef: reorderQueueRef,
+      reorderGenerationRef,
+      rowsByGroupId: rowsByDate,
+      timeUpdates,
+    })
   }
 
   async function handleSpreadsheetDrop(event: DragEvent<HTMLTableRowElement>) {
@@ -869,74 +774,30 @@ export function TripSpreadsheetPage({
       return
     }
 
-    const isSameDay = sourceDate === targetDate
-    const targetRowsWithoutDraggedItem = targetRows.filter(
-      (row) => getItineraryRowKey(row) !== draggedItemKey,
-    )
-    const adjustedTargetIndex =
-      isSameDay && sourceIndex < rawTargetIndex ? rawTargetIndex - 1 : rawTargetIndex
-    const insertionIndex = Math.max(
-      0,
-      Math.min(adjustedTargetIndex, targetRowsWithoutDraggedItem.length),
-    )
-    const movedRow = sourceRows[sourceIndex]
-    const nextTargetRows = [
-      ...targetRowsWithoutDraggedItem.slice(0, insertionIndex),
-      movedRow,
-      ...targetRowsWithoutDraggedItem.slice(insertionIndex),
-    ]
-    const finalIndex = insertionIndex
-
-    if (isSameDay && finalIndex === sourceIndex) {
+    const reorderResult = calculateSpreadsheetReorder({
+      draggedKey: draggedItemKey,
+      sourceGroupId: sourceDate,
+      sourceRows,
+      targetGroupId: targetDate,
+      targetIndex: rawTargetIndex,
+      targetRows,
+    })
+    if (!reorderResult) {
+      return
+    }
+    if ("error" in reorderResult) {
+      setReorderError(t("spreadsheet.reorderTimeRangeError"))
       return
     }
 
-    const timeUpdates = new Map<string, ItemTimeUpdate>()
-
-    if (isSameDay) {
-      const segmentStart = Math.min(sourceIndex, finalIndex)
-      const segmentEnd = Math.max(sourceIndex, finalIndex)
-      const originalTimedRows = sourceRows
-        .slice(segmentStart, segmentEnd + 1)
-        .filter((row) => getTimeAnchor(row.item) !== null)
-      const reorderedTimedRows = nextTargetRows
-        .slice(segmentStart, segmentEnd + 1)
-        .filter((row) => getTimeAnchor(row.item) !== null)
-      const originalTimeSlots = originalTimedRows
-        .map((row) => getTimeAnchor(row.item))
-        .filter((time): time is string => time !== null)
-
-      for (const [index, row] of reorderedTimedRows.entries()) {
-        const timeUpdate = rebaseItemTime(row.item, originalTimeSlots[index])
-        if (!timeUpdate) {
-          setReorderError(t("spreadsheet.reorderTimeRangeError"))
-          return
-        }
-
-        timeUpdates.set(getItineraryRowKey(row), timeUpdate)
-      }
-    } else {
-      timeUpdates.set(getItineraryRowKey(movedRow), {
-        endTime: null,
-        startTime: null,
-      })
-    }
-
-    const rowsByDate = new Map<string, ItineraryRow[]>()
-    if (isSameDay) {
-      rowsByDate.set(sourceDate, nextTargetRows)
-    } else {
-      rowsByDate.set(
-        sourceDate,
-        sourceRows.filter((row) => getItineraryRowKey(row) !== draggedItemKey),
-      )
-      rowsByDate.set(targetDate, nextTargetRows)
-    }
-
-    const optimisticTrip = getOptimisticReorderedTrip(currentTrip, rowsByDate, timeUpdates)
+    const optimisticTrip = getOptimisticReorderedTrip(
+      currentTrip,
+      reorderResult.rowsByGroupId,
+      reorderResult.timeUpdates,
+    )
     setReorderError(null)
     latestTripRef.current = optimisticTrip
-    queueReorder(optimisticTrip)
+    queueReorder(optimisticTrip, reorderResult.rowsByGroupId, reorderResult.timeUpdates)
     onTripUpdated(optimisticTrip)
   }
 
