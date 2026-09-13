@@ -42,7 +42,6 @@ import {
   isTripDurationWithinLimit,
   type Trip,
   type TripDetail,
-  type TripMember,
   type ReorderDayItemInput,
   type UpdateActivityInput,
 } from "@turprep/models"
@@ -50,6 +49,7 @@ import { createSupabaseAuthService, type AuthenticatedUser, type AuthService } f
 import {
   createSupabaseTripRepository,
   CurrencyRemovalError,
+  HousingOverlapError,
   isDateWithinTrip,
   isValidDateRange,
   type TripRepository,
@@ -63,7 +63,11 @@ import {
   type GooglePlacesResolver,
   type GooglePlacesSuggestionsResolver,
 } from "./google-places.js"
-import { createSharingEmailSender, type SharingEmailSender } from "./sharing-email.js"
+import {
+  createSharingEmailSender,
+  type SharingEmail,
+  type SharingEmailSender,
+} from "./sharing-email.js"
 import { PRODUCT_NAME } from "./brand.js"
 
 type AuthenticatedRequest = Request & {
@@ -91,9 +95,25 @@ function getAccessToken(request: Request): string | null {
   return token || null
 }
 
+function getFrontendAppUrl() {
+  return (process.env.FRONTEND_APP_URL ?? "http://localhost:3000").replace(/\/+$/, "")
+}
+
 function getSharingActionUrl(tripId: string, query: string) {
-  const appUrl = process.env.FRONTEND_APP_URL ?? "http://localhost:3000"
-  return `${appUrl}/trips/${tripId}/request-access?${query}`
+  return `${getFrontendAppUrl()}/trips/${tripId}/request-access?${query}`
+}
+
+/**
+ * Sharing changes are already committed by the time an email is sent, so a
+ * failing notification must not turn the request into a 500 (which would make
+ * clients retry and create duplicate invitations). Log and continue instead.
+ */
+async function sendSharingEmailQuietly(sender: SharingEmailSender, email: SharingEmail) {
+  try {
+    await sender.send(email)
+  } catch (error) {
+    console.error("Sharing email notification failed", error)
+  }
 }
 
 function getReorderedItemStartTime(trip: TripDetail, item: ReorderDayItemInput) {
@@ -339,10 +359,17 @@ export function createApp(dependencies: AppDependencies = {}) {
     },
   )
 
-  app.put(
-    "/api/trips/:tripId/currencies",
-    (request, response, next) => requireAuthenticatedUser(authService, request, response, next),
-    async (request: Request, response: Response, next: NextFunction) => {
+  {
+    // PUT and PATCH both replace the full accepted-currency list; share one
+    // handler so the two verbs cannot drift apart.
+    const currenciesPath = "/api/trips/:tripId/currencies"
+    const authenticate = (request: Request, response: Response, next: NextFunction) =>
+      requireAuthenticatedUser(authService, request, response, next)
+    const updateTripCurrencies = async (
+      request: Request,
+      response: Response,
+      next: NextFunction,
+    ) => {
       try {
         const authenticatedRequest = request as AuthenticatedRequest
         const { tripId } = request.params
@@ -374,43 +401,11 @@ export function createApp(dependencies: AppDependencies = {}) {
         }
         next(error)
       }
-    },
-  )
+    }
 
-  app.patch(
-    "/api/trips/:tripId/currencies",
-    (request, response, next) => requireAuthenticatedUser(authService, request, response, next),
-    async (request: Request, response: Response, next: NextFunction) => {
-      try {
-        const authenticatedRequest = request as AuthenticatedRequest
-        const { tripId } = request.params
-        const parsedInput = UpdateTripCurrencySettingsInputSchema.safeParse(request.body)
-        if (typeof tripId !== "string" || !parsedInput.success) {
-          response.status(400).json({ message: "Invalid currency settings" })
-          return
-        }
-
-        const settings = await tripRepository.updateTripCurrencies(
-          authenticatedRequest.user.id,
-          authenticatedRequest.accessToken,
-          tripId,
-          parsedInput.data,
-        )
-        if (!settings) {
-          response.status(404).json({ message: "Trip not found" })
-          return
-        }
-
-        response.json(TripCurrencySettingsSchema.parse(settings))
-      } catch (error) {
-        if (error instanceof CurrencyRemovalError) {
-          response.status(400).json({ message: error.message, currencies: error.currencies })
-          return
-        }
-        next(error)
-      }
-    },
-  )
+    app.put(currenciesPath, authenticate, updateTripCurrencies)
+    app.patch(currenciesPath, authenticate, updateTripCurrencies)
+  }
 
   {
     const itemDetailVisibilityPath = "/api/trips/:tripId/item-detail-visibility"
@@ -537,7 +532,7 @@ export function createApp(dependencies: AppDependencies = {}) {
           return
         }
 
-        await sharingEmailSender.send({
+        await sendSharingEmailQuietly(sharingEmailSender, {
           to: invitation.email,
           subject: "You have been invited to collaborate on a trip",
           actionUrl: getSharingActionUrl(
@@ -620,10 +615,10 @@ export function createApp(dependencies: AppDependencies = {}) {
             tripId,
           )
           if (ownerEmail) {
-            await sharingEmailSender.send({
+            await sendSharingEmailQuietly(sharingEmailSender, {
               to: ownerEmail,
               subject: "A user has requested access to your trip",
-              actionUrl: `${process.env.FRONTEND_APP_URL ?? "http://localhost:3000"}/trips/${tripId}`,
+              actionUrl: `${getFrontendAppUrl()}/trips/${tripId}`,
               actionLabel: "Review access request",
             })
           }
@@ -686,10 +681,10 @@ export function createApp(dependencies: AppDependencies = {}) {
         }
 
         if (member.email) {
-          await sharingEmailSender.send({
+          await sendSharingEmailQuietly(sharingEmailSender, {
             to: member.email,
             subject: "Your trip access request was approved",
-            actionUrl: `${process.env.FRONTEND_APP_URL ?? "http://localhost:3000"}/trips/${tripId}`,
+            actionUrl: `${getFrontendAppUrl()}/trips/${tripId}`,
             actionLabel: "Open trip",
           })
         }
@@ -724,10 +719,10 @@ export function createApp(dependencies: AppDependencies = {}) {
           return
         }
 
-        await sharingEmailSender.send({
+        await sendSharingEmailQuietly(sharingEmailSender, {
           to: accessRequest.email,
           subject: "Your trip access request was denied",
-          actionUrl: `${process.env.FRONTEND_APP_URL ?? "http://localhost:3000"}/`,
+          actionUrl: `${getFrontendAppUrl()}/`,
           actionLabel: `Open ${PRODUCT_NAME}`,
         })
 
@@ -822,10 +817,10 @@ export function createApp(dependencies: AppDependencies = {}) {
         }
 
         if (removed.email) {
-          await sharingEmailSender.send({
+          await sendSharingEmailQuietly(sharingEmailSender, {
             to: removed.email,
             subject: "Your access to a trip was removed",
-            actionUrl: `${process.env.FRONTEND_APP_URL ?? "http://localhost:3000"}/`,
+            actionUrl: `${getFrontendAppUrl()}/`,
             actionLabel: `Open ${PRODUCT_NAME}`,
           })
         }
@@ -902,6 +897,17 @@ export function createApp(dependencies: AppDependencies = {}) {
         if (activityOutsideTrip) {
           response.status(400).json({
             message: "The new trip dates cannot exclude existing activities",
+          })
+          return
+        }
+
+        const mealOutsideTrip = currentTrip.meals.some(
+          (meal) => meal.tripDate !== null && !isDateWithinTrip(nextTrip, meal.tripDate),
+        )
+
+        if (mealOutsideTrip) {
+          response.status(400).json({
+            message: "The new trip dates cannot exclude existing meals",
           })
           return
         }
@@ -1137,6 +1143,10 @@ export function createApp(dependencies: AppDependencies = {}) {
 
         response.status(201).json(HousingStaySchema.parse(housingStay))
       } catch (error) {
+        if (error instanceof HousingOverlapError) {
+          response.status(409).json({ message: error.message })
+          return
+        }
         next(error)
       }
     },
@@ -1246,6 +1256,10 @@ export function createApp(dependencies: AppDependencies = {}) {
 
         response.json(HousingStaySchema.parse(housingStay))
       } catch (error) {
+        if (error instanceof HousingOverlapError) {
+          response.status(409).json({ message: error.message })
+          return
+        }
         next(error)
       }
     },
@@ -1941,7 +1955,10 @@ export function createApp(dependencies: AppDependencies = {}) {
 
   const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => {
     console.error(error)
-    const isLocalDevelopment = process.env.NODE_ENV !== "production"
+    // Fail closed: only expose internal error messages when NODE_ENV is
+    // explicitly "development", so a missing or unusual NODE_ENV on a deployed
+    // host cannot leak database or upstream details to clients.
+    const isLocalDevelopment = process.env.NODE_ENV === "development"
     const message =
       isLocalDevelopment && error instanceof Error ? error.message : "Internal server error"
 

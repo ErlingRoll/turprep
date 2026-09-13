@@ -43,7 +43,13 @@ export function TravelMode({ accessToken, trip, showDetails }: TravelModeProps) 
   const [mapFocusMarker, setMapFocusMarker] = useState<TripMapMarker | null>(null)
 
   useEffect(() => {
-    setSelectedDate(trip.days[getRelevantDayIndex(trip.days)]?.date ?? "")
+    // Keep the day the user is browsing across realtime refreshes; only jump
+    // to the relevant day when the current selection no longer exists.
+    setSelectedDate((currentDate) =>
+      trip.days.some((day) => day.date === currentDate)
+        ? currentDate
+        : (trip.days[getRelevantDayIndex(trip.days)]?.date ?? ""),
+    )
   }, [trip.id, trip.days])
 
   useEffect(() => {
@@ -110,7 +116,7 @@ export function TravelMode({ accessToken, trip, showDetails }: TravelModeProps) 
     [selectedDay.date, trip.housingStays],
   )
   const mealsForDay = useMemo(
-    () => trip.meals.filter((meal) => meal.tripDate === selectedDay.date),
+    () => trip.meals.filter((meal) => !meal.isBackup && meal.tripDate === selectedDay.date),
     [selectedDay.date, trip.meals],
   )
   const mapMarkers = useMemo<TripMapMarker[]>(

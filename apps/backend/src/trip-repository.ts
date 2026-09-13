@@ -27,8 +27,6 @@ import {
   TripItemDetailVisibilitySchema,
   UpdateTripCurrencySettingsInputSchema,
   UpdateTripItemDetailVisibilityInputSchema,
-  UpdateHousingStayInputSchema,
-  UpdateMealInputSchema,
   UpdateTripDayInputSchema,
   UpdateTripInputSchema,
   UpdateActivityInputSchema,
@@ -433,6 +431,23 @@ export interface TripRepository {
     tripId: string,
     activityId: string,
   ): Promise<boolean>
+}
+
+export class HousingOverlapError extends Error {
+  constructor() {
+    super("Planned housing stays cannot overlap")
+    this.name = "HousingOverlapError"
+  }
+}
+
+// Postgres raises 23P01 when the housing_stays exclusion constraint
+// (prevent_planned_housing_overlap migration) rejects an overlapping stay.
+function isExclusionViolation(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "23P01"
+  )
 }
 
 export class CurrencyRemovalError extends Error {
@@ -1356,7 +1371,7 @@ export function createSupabaseTripRepository(): TripRepository {
       })
 
       if (error) {
-        throw error
+        throw isExclusionViolation(error) ? new HousingOverlapError() : error
       }
 
       const { data, error: readError } = await client
@@ -1418,7 +1433,7 @@ export function createSupabaseTripRepository(): TripRepository {
         .eq("id", housingStayId)
 
       if (error) {
-        throw error
+        throw isExclusionViolation(error) ? new HousingOverlapError() : error
       }
 
       return this.getHousingStay(_userId, accessToken, tripId, housingStayId)

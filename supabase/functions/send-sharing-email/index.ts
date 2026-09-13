@@ -10,8 +10,57 @@ const resendApiKey = Deno.env.get("RESEND_API_KEY")
 const sender = Deno.env.get("SHARING_EMAIL_FROM")
 const functionSecret = Deno.env.get("SHARING_EMAIL_FUNCTION_SECRET")
 
+const MAX_FIELD_LENGTH = 500
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;")
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= MAX_FIELD_LENGTH
+}
+
+function isHttpsUrl(value: string) {
+  try {
+    return new URL(value).protocol === "https:"
+  } catch {
+    return false
+  }
+}
+
+function parseSharingEmail(body: unknown): SharingEmail | null {
+  if (typeof body !== "object" || body === null) {
+    return null
+  }
+
+  const { to, subject, actionUrl, actionLabel } = body as Record<string, unknown>
+
+  if (
+    !isNonEmptyString(to) ||
+    !emailPattern.test(to) ||
+    !isNonEmptyString(subject) ||
+    !isNonEmptyString(actionUrl) ||
+    !isHttpsUrl(actionUrl) ||
+    !isNonEmptyString(actionLabel)
+  ) {
+    return null
+  }
+
+  return { to, subject, actionUrl, actionLabel }
+}
+
 Deno.serve(async (request) => {
-  if (request.headers.get("authorization") !== `Bearer ${functionSecret}` || !functionSecret) {
+  if (request.method !== "POST") {
+    return new Response("Method not allowed", { status: 405 })
+  }
+
+  if (!functionSecret || request.headers.get("authorization") !== `Bearer ${functionSecret}`) {
     return new Response("Unauthorized", { status: 401 })
   }
 
@@ -19,8 +68,15 @@ Deno.serve(async (request) => {
     return Response.json({ message: "Email delivery is not configured" }, { status: 503 })
   }
 
-  const email = (await request.json()) as SharingEmail
-  if (!email.to || !email.subject || !email.actionUrl || !email.actionLabel) {
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return Response.json({ message: "Invalid email data" }, { status: 400 })
+  }
+
+  const email = parseSharingEmail(body)
+  if (!email) {
     return Response.json({ message: "Invalid email data" }, { status: 400 })
   }
 
@@ -34,7 +90,8 @@ Deno.serve(async (request) => {
       from: sender,
       to: [email.to],
       subject: email.subject,
-      html: `<p>${email.subject}</p><p><a href="${email.actionUrl}">${email.actionLabel}</a></p>`,
+      // Escape every interpolated value so callers cannot inject markup.
+      html: `<p>${escapeHtml(email.subject)}</p><p><a href="${escapeHtml(email.actionUrl)}">${escapeHtml(email.actionLabel)}</a></p>`,
     }),
   })
 

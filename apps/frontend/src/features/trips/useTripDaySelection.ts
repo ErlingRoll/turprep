@@ -130,20 +130,19 @@ export function useTripDaySelection(trip: TripDetail | null): TripDaySelection {
       return
     }
 
-    setSelectedDayDates((currentDates) => {
-      const nextDates = currentDates.includes(date)
-        ? currentDates.filter((currentDate) => currentDate !== date)
-        : [...currentDates, date]
+    // Compute outside the state updater: updaters must stay pure (StrictMode
+    // double-invokes them), and nested setState calls inside them are unsupported.
+    const nextDates = selectedDayDates.includes(date)
+      ? selectedDayDates.filter((currentDate) => currentDate !== date)
+      : [...selectedDayDates, date]
 
-      writeSelectedDayDates(trip.id, nextDates)
-      setLastClickedDayDate(date)
+    setSelectedDayDates(nextDates)
+    setLastClickedDayDate(date)
+    writeSelectedDayDates(trip.id, nextDates)
 
-      if (nextDates.length > 0 && !nextDates.includes(selectedDayDate)) {
-        setSelectedDayDate(nextDates[0])
-      }
-
-      return nextDates
-    })
+    if (nextDates.length > 0 && !nextDates.includes(selectedDayDate)) {
+      setSelectedDayDate(nextDates[0])
+    }
   }
 
   function onSelectAll() {

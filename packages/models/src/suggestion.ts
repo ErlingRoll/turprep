@@ -35,7 +35,7 @@ export type SuggestionSeason = z.infer<typeof SuggestionSeasonSchema>
 export type SuggestionSearchMode = z.infer<typeof SuggestionSearchModeSchema>
 export type SuggestionRegion = z.infer<typeof SuggestionRegionSchema>
 export type SuggestionQuestion = z.infer<typeof SuggestionQuestionSchema>
-type SuggestionCatalogQuestion = SuggestionQuestion & {
+export type SuggestionCatalogQuestion = SuggestionQuestion & {
   itemType: SuggestionItemType
   region?: SuggestionRegion
 }

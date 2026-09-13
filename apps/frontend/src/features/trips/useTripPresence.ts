@@ -170,6 +170,12 @@ export function useTripPresence(tripId: string | undefined, accessToken: string)
           },
         })
 
+        if (!isActive) {
+          // The effect was torn down while the auth lookup was in flight.
+          void client.removeChannel(channel)
+          return
+        }
+
         channel.on("presence", { event: "sync" }, refreshViewers)
         channel.on("presence", { event: "join" }, refreshViewers)
         channel.on("presence", { event: "leave" }, refreshViewers)
@@ -182,6 +188,10 @@ export function useTripPresence(tripId: string | undefined, accessToken: string)
         heartbeatTimer = window.setInterval(trackPresence, heartbeatIntervalMs)
         staleRefreshTimer = window.setInterval(refreshViewers, staleRefreshIntervalMs)
         refreshViewers()
+      })
+      .catch((reason: unknown) => {
+        // Presence is a best-effort indicator; never surface an unhandled rejection.
+        console.warn("Trip presence could not be initialised", reason)
       })
 
     return () => {

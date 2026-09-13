@@ -475,6 +475,7 @@ export function TripSpreadsheetPage({
     googleMapsUrl: string | null,
   ): Promise<string | null> {
     setSaveError(null)
+    setIsSaving(true)
 
     try {
       if (type === "meal") {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { getErrorMessage } from "../lib/errors"
 import { subscribeToHttpErrors } from "../lib/http-errors"
 import { ToastContext, type Toast, type ToastContextValue } from "./ToastContext"
@@ -33,10 +33,10 @@ export function ToastProvider({ children }: ToastProviderProps) {
     [addToast],
   )
 
-  const contextValue: ToastContextValue = {
-    addToast,
-    dismissToast,
-  }
+  const contextValue = useMemo<ToastContextValue>(
+    () => ({ addToast, dismissToast }),
+    [addToast, dismissToast],
+  )
 
   return (
     <ToastContext.Provider value={contextValue}>

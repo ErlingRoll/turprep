@@ -161,7 +161,11 @@ export function TripDashboard({ session }: TripDashboardProps) {
   }, [search, trips])
 
   async function signOut() {
-    await getSupabaseClient().auth.signOut()
+    const { error: signOutError } = await getSupabaseClient().auth.signOut()
+
+    if (signOutError) {
+      setError(getErrorMessage(signOutError))
+    }
   }
 
   function handleCreated(trip: Trip) {
@@ -200,8 +204,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
 
     try {
       await deleteTrip(session.access_token, trip.id)
-      const remainingTrips = trips.filter((currentTrip) => currentTrip.id !== trip.id)
-      setTrips(remainingTrips)
+      setTrips((currentTrips) => currentTrips.filter((currentTrip) => currentTrip.id !== trip.id))
 
       if (tripId === trip.id) {
         setSelectedTrip(null)

@@ -21,6 +21,12 @@ type TripSharingSettingsProps = {
   trip: TripDetail
 }
 
+const COPIED_FEEDBACK_MS = 2000
+
+function getAccessLinkUrl(tripId: string, token: string) {
+  return `${window.location.origin}/trips/${tripId}/request-access?token=${encodeURIComponent(token)}`
+}
+
 type PendingSharingDeletion =
   | { id: string; label: string; type: "member" }
   | { id: string; label: string; type: "invitation" }
@@ -92,6 +98,15 @@ export function TripSharingSettings({
       window.clearInterval(refreshInterval)
     }
   }, [accessToken, sharing?.canManage, trip.id])
+
+  useEffect(() => {
+    if (copiedLinkId === null) {
+      return
+    }
+
+    const timer = window.setTimeout(() => setCopiedLinkId(null), COPIED_FEEDBACK_MS)
+    return () => window.clearTimeout(timer)
+  }, [copiedLinkId])
 
   if (isLoading) {
     return (
@@ -264,9 +279,8 @@ export function TripSharingSettings({
   }
 
   async function handleCopyLink(linkId: string, token: string) {
-    const url = `${window.location.origin}/trips/${trip.id}/request-access?token=${token}`
     try {
-      await navigator.clipboard.writeText(url)
+      await navigator.clipboard.writeText(getAccessLinkUrl(trip.id, token))
       setCopiedLinkId(linkId)
     } catch (reason: unknown) {
       setError(getErrorMessage(reason))
@@ -438,7 +452,7 @@ export function TripSharingSettings({
               key={link.id}
             >
               <code className="min-w-0 truncate text-xs text-muted">
-                {`${window.location.origin}/trips/${trip.id}/request-access?token=${link.token}`}
+                {getAccessLinkUrl(trip.id, link.token)}
               </code>
               <div className="flex shrink-0 gap-2">
                 <button

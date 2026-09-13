@@ -3,3 +3,5 @@ dist
 coverage
 package-lock.json
 .git
+supabase/.temp
+*.tsbuildinfo

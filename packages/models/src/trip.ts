@@ -1,19 +1,30 @@
 import { z } from "zod"
 import { TripItemPreferenceSchema } from "./preferences.js"
 
-export const DateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/
+
 export const MAX_TRIP_DAYS = 60
 
 function parseCalendarDate(date: string) {
+  if (!dateOnlyPattern.test(date)) {
+    return null
+  }
+
   const [year, month, day] = date.split("-").map(Number)
   const parsedDate = new Date(Date.UTC(year, month - 1, day))
 
-  if (!DateOnlySchema.safeParse(date).success || parsedDate.toISOString().slice(0, 10) !== date) {
+  if (parsedDate.toISOString().slice(0, 10) !== date) {
     return null
   }
 
   return parsedDate
 }
+
+// Reject well-formed but non-existent dates such as 2026-02-30 or 2026-13-01.
+export const DateOnlySchema = z
+  .string()
+  .regex(dateOnlyPattern)
+  .refine((date) => parseCalendarDate(date) !== null, "Invalid calendar date")
 
 export function getTripDurationInDays(startDate: string, endDate: string): number | null {
   const start = parseCalendarDate(startDate)
@@ -215,7 +226,9 @@ export const CreateHousingStayInputSchema = HousingStayFieldsSchema.extend({
 
 export const UpdateHousingStayInputSchema = z
   .object({
-    name: z.string().trim().min(1).max(200).optional(),
+    // A blank name is allowed when a Google Maps link is set; the merged
+    // CreateHousingStayInputSchema check in the route enforces that rule.
+    name: z.string().trim().max(200).optional(),
     checkIn: DateOnlySchema.nullable().optional(),
     checkOut: DateOnlySchema.nullable().optional(),
     isBackup: z.boolean().optional(),

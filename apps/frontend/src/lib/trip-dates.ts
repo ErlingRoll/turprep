@@ -1,11 +1,5 @@
-import { getTripDurationInDays, isTripDurationWithinLimit, MAX_TRIP_DAYS } from "@turprep/models"
+import { getTripDurationInDays, MAX_TRIP_DAYS } from "@turprep/models"
 import i18n from "../i18n"
-
-export { MAX_TRIP_DAYS }
-
-export function isValidTripDuration(startDate: string, endDate: string) {
-  return isTripDurationWithinLimit(startDate, endDate)
-}
 
 export function shiftDate(date: string, dayOffset: number) {
   const parsedDate = new Date(`${date}T12:00:00Z`)

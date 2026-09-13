@@ -118,6 +118,7 @@ export type {
   GooglePlaceSuggestion,
   GooglePlaceSuggestionsInput,
   SuggestionAnswer,
+  SuggestionCatalogQuestion,
   SuggestionDestination,
   SuggestionItemType,
   SuggestionQuestion,

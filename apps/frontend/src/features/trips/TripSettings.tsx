@@ -221,7 +221,7 @@ export function TripSettings({ accessToken, trip, onSaved, onClose, onDelete }: 
                 setEndDate(maximumEndDate)
               }
             }}
-            maxDate={endDate ? shiftDate(endDate, -59) : undefined}
+            minDate={endDate ? shiftDate(endDate, -59) : undefined}
             value={startDate}
           />
           <DatePicker

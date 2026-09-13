@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useId, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { getDateLocale, getWeekdayLabels } from "../i18n"
 import { getPickerPosition, type PickerPosition } from "../lib/picker-position"
@@ -58,7 +58,7 @@ export function DatePicker({
 }: DatePickerProps) {
   const { i18n, t } = useTranslation()
   const containerRef = useRef<HTMLDivElement>(null)
-  const errorId = `date-picker-error-${label.toLowerCase().replaceAll(/\s+/g, "-")}`
+  const errorId = useId()
   const [isOpen, setIsOpen] = useState(false)
   const [popoverPosition, setPopoverPosition] = useState<PickerPosition | null>(null)
   const [viewDate, setViewDate] = useState(() => parseDate(value) ?? getToday())

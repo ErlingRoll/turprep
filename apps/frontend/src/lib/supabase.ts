@@ -23,6 +23,22 @@ function getStoredPersistencePreference(): boolean {
 let client: SupabaseClient | null = null
 let clientPersistence: boolean | null = null
 
+type SupabaseClientListener = (client: SupabaseClient) => void
+
+const clientChangeListeners = new Set<SupabaseClientListener>()
+
+/**
+ * Notifies the listener whenever `getSupabaseClient` replaces the shared client
+ * (for example when the login screen switches session persistence). Callers
+ * that hold auth subscriptions must re-subscribe on the new client.
+ */
+export function subscribeToSupabaseClientChanges(listener: SupabaseClientListener) {
+  clientChangeListeners.add(listener)
+  return () => {
+    clientChangeListeners.delete(listener)
+  }
+}
+
 export function setSessionPersistencePreference(rememberSession: boolean) {
   window.localStorage.setItem(persistencePreferenceKey, String(rememberSession))
 }
@@ -44,6 +60,10 @@ export function getSupabaseClient(
     },
   })
   clientPersistence = rememberSession
+
+  for (const listener of clientChangeListeners) {
+    listener(client)
+  }
 
   return client
 }

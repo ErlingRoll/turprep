@@ -188,33 +188,6 @@ export function applyDefaultEndTimeForStartEdit<T extends { allDay: boolean; end
   }
 }
 
-export function hasValidTimedOrder(
-  rows: ItineraryRow[],
-  rowKey: string,
-  draft: { allDay: boolean; startTime: string; endTime: string },
-) {
-  const updatedRows = rows.map((row) =>
-    getItineraryRowKey(row) === rowKey ? getUpdatedRowTimeDraft(row, draft) : row,
-  )
-
-  let previousAnchor: string | null = null
-  for (const row of updatedRows) {
-    const anchor = getTimedAnchor(row)
-
-    if (anchor === null) {
-      continue
-    }
-
-    if (previousAnchor !== null && anchor < previousAnchor) {
-      return false
-    }
-
-    previousAnchor = anchor
-  }
-
-  return true
-}
-
 export function getTimeOrderValidationError(
   rows: ItineraryRow[],
   rowKey: string,

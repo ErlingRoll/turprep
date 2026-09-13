@@ -72,7 +72,12 @@ function shiftTime(value: string, hours: number) {
     return ""
   }
 
-  const totalMinutes = (Number(match[1]) * 60 + Number(match[2]) + hours * 60 + 24 * 60) % (24 * 60)
+  // Clamp to the same day: wrapping past midnight would produce an end time
+  // before the start time, which the API rejects.
+  const totalMinutes = Math.min(
+    Math.max(Number(match[1]) * 60 + Number(match[2]) + hours * 60, 0),
+    23 * 60 + 59,
+  )
 
   return `${String(Math.floor(totalMinutes / 60)).padStart(2, "0")}:${String(
     totalMinutes % 60,

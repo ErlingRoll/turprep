@@ -1,32 +1,33 @@
-# React + TypeScript + Vite
+# Turprep frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Vite, React, TypeScript, and Tailwind CSS client for Turprep. See the
+[root README](../../README.md) for the full workspace setup, scripts, and
+deployment notes.
 
-Currently, two official plugins are available:
+## Running locally
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Run the app from the repository root so the shared `@turprep/models` package is
+built first:
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Running `vite` directly inside this folder fails on a fresh checkout because
+`packages/models/dist` does not exist yet.
+
+## Configuration
+
+Copy `.env.example` to `.env.local` and fill in the values. All `VITE_*`
+variables are browser-visible; never put a Supabase `service_role` key or the
+backend `GOOGLE_PLACES_API_KEY` here.
+
+## Linting
+
+```bash
+npm run lint
+```
+
+The linter is [Oxlint](https://oxc.rs/docs/guide/usage/linter), configured in
+`.oxlintrc.json`.

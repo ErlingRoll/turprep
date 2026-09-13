@@ -3,6 +3,7 @@ import {
   CreateActivityInputSchema,
   CreateHousingStayInputSchema,
   CreateMealInputSchema,
+  CreateTripInputSchema,
   GooglePlaceDetailsSchema,
   GooglePlaceSuggestionsInputSchema,
   GooglePlaceSuggestionsSchema,
@@ -28,6 +29,7 @@ import {
   TripSchema,
   UpdateHousingStayInputSchema,
   UpdateMealInputSchema,
+  UpdateTripDayInputSchema,
   UpdateTripInputSchema,
   UpdateActivityInputSchema,
   UpdateTripCurrencySettingsInputSchema,
@@ -408,7 +410,7 @@ export async function createTrip(accessToken: string, input: CreateTripInput): P
   return TripSchema.parse(
     await request("/api/trips", accessToken, {
       method: "POST",
-      body: JSON.stringify(input),
+      body: JSON.stringify(CreateTripInputSchema.parse(input)),
     }),
   )
 }
@@ -428,7 +430,7 @@ export async function updateTripDay(
   return TripDaySchema.parse(
     await request(`/api/trips/${tripId}/days/${tripDate}`, accessToken, {
       method: "PATCH",
-      body: JSON.stringify(input),
+      body: JSON.stringify(UpdateTripDayInputSchema.parse(input)),
     }),
   )
 }

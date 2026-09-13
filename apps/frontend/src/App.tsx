@@ -3,7 +3,7 @@ import type { Session } from "@supabase/supabase-js"
 import { Navigate, Route, Routes, useParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { getErrorMessage } from "./lib/errors"
-import { getSupabaseClient } from "./lib/supabase"
+import { getSupabaseClient, subscribeToSupabaseClientChanges } from "./lib/supabase"
 import { LoadingCover } from "./components/LoadingCover"
 import { SeoMetadata } from "./components/SeoMetadata"
 import { LoginScreen } from "./features/auth/LoginScreen"
@@ -31,7 +31,28 @@ export default function App() {
 
   useEffect(() => {
     let isMounted = true
-    let unsubscribe = () => {}
+    let unsubscribeAuth = () => {}
+
+    function watchAuthState(client: ReturnType<typeof getSupabaseClient>) {
+      unsubscribeAuth()
+
+      const {
+        data: { subscription },
+      } = client.auth.onAuthStateChange((_event, nextSession) => {
+        if (isMounted) {
+          setSession(nextSession)
+        }
+      })
+      unsubscribeAuth = () => subscription.unsubscribe()
+    }
+
+    // The login screen replaces the shared client when the user changes the
+    // "remember me" preference, so the auth subscription must follow it.
+    const unsubscribeClientChanges = subscribeToSupabaseClientChanges((client) => {
+      if (isMounted) {
+        watchAuthState(client)
+      }
+    })
 
     async function initializeAuth() {
       try {
@@ -47,16 +68,8 @@ export default function App() {
         if (isMounted) {
           setSession(data.session)
           setIsAuthReady(true)
+          watchAuthState(client)
         }
-
-        const {
-          data: { subscription },
-        } = client.auth.onAuthStateChange((_event, nextSession) => {
-          if (isMounted) {
-            setSession(nextSession)
-          }
-        })
-        unsubscribe = () => subscription.unsubscribe()
       } catch (reason: unknown) {
         if (isMounted) {
           setAuthError(getErrorMessage(reason))
@@ -69,7 +82,8 @@ export default function App() {
 
     return () => {
       isMounted = false
-      unsubscribe()
+      unsubscribeClientChanges()
+      unsubscribeAuth()
     }
   }, [])
 

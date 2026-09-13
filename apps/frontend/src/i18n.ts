@@ -112,6 +112,7 @@ const resources = {
         googleMaps: "Google Maps",
         housing: "Overnatting",
         housingDescription: "Overnatting vises separat fordi den kan dekke flere dager.",
+        housingDateRangeInvalid: "Utsjekk må være etter innsjekk.",
         housingNameRequired: "Overnattingen må ha et navn.",
         itinerary: "Reiserute",
         meal: "Måltid",
@@ -610,6 +611,9 @@ const resources = {
         tripMealIdsRequired: "Måltidet kunne ikke behandles fordi ID mangler.",
         tripDatesExcludeActivities:
           "De nye reisedatoene kan ikke fjerne eksisterende aktiviteter fra reisen.",
+        tripDatesExcludeMeals:
+          "De nye reisedatoene kan ikke fjerne eksisterende måltider fra reisen.",
+        housingOverlap: "Planlagte overnattinger kan ikke overlappe i tid.",
         tripIdAndDateRequired: "Dagen kunne ikke behandles fordi reise eller dato mangler.",
         tripIdRequired: "Reisen kunne ikke behandles fordi ID mangler.",
         tripItemNotFound: "Fant ikke planpunktet.",
@@ -882,6 +886,7 @@ const resources = {
         googleMaps: "Google Maps",
         housing: "Accommodation",
         housingDescription: "Accommodation is separate because it can cover multiple days.",
+        housingDateRangeInvalid: "Check-out must be after check-in.",
         housingNameRequired: "The accommodation must have a name.",
         itinerary: "Itinerary",
         meal: "Meal",
@@ -1375,6 +1380,8 @@ const resources = {
         tripMealIdsRequired: "The meal could not be processed because its ID is missing.",
         tripDatesExcludeActivities:
           "The new trip dates cannot remove existing activities from the trip.",
+        tripDatesExcludeMeals: "The new trip dates cannot remove existing meals from the trip.",
+        housingOverlap: "Planned accommodation stays cannot overlap.",
         tripIdAndDateRequired: "The day could not be processed because the trip or date is missing.",
         tripIdRequired: "The trip could not be processed because its ID is missing.",
         tripItemNotFound: "The planned item could not be found.",

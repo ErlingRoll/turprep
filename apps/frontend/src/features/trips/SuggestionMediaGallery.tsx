@@ -16,6 +16,7 @@ export function SuggestionMediaGallery({ accessToken, suggestion }: SuggestionMe
 
   useEffect(() => {
     let isCancelled = false
+    let activePhotoUrls: string[] = []
 
     async function loadPhotos() {
       const results = await Promise.allSettled(
@@ -30,6 +31,7 @@ export function SuggestionMediaGallery({ accessToken, suggestion }: SuggestionMe
       )
 
       if (!isCancelled) {
+        activePhotoUrls = loadedPhotoUrls
         setPhotoUrls(loadedPhotoUrls)
         setIsLoading(false)
       } else {
@@ -46,6 +48,8 @@ export function SuggestionMediaGallery({ accessToken, suggestion }: SuggestionMe
 
     return () => {
       isCancelled = true
+      // Release object URLs from this run so blobs do not accumulate.
+      activePhotoUrls.forEach((photoUrl) => URL.revokeObjectURL(photoUrl))
     }
   }, [accessToken, suggestion])
 

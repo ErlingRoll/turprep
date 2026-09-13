@@ -9,6 +9,10 @@ import {
 } from "@turprep/models"
 import { PRODUCT_USER_AGENT } from "./brand.js"
 
+// Outbound requests to Google would otherwise hang an Express request forever.
+const FETCH_TIMEOUT_MS = 10_000
+const PLACE_DETAILS_CACHE_MAX_ENTRIES = 500
+
 const placeDetailsSchema = z.object({
   id: z.string().nullable().optional(),
   displayName: z.object({ text: z.string().min(1) }),
@@ -130,7 +134,12 @@ async function resolveRedirectUrl(inputUrl: URL): Promise<URL> {
     const response = await fetch(currentUrl, {
       headers: { "User-Agent": PRODUCT_USER_AGENT },
       redirect: "manual",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     })
+
+    // Only the status and headers are needed; release the body so the
+    // connection returns to the pool.
+    await response.body?.cancel().catch(() => {})
 
     if (response.status < 300 || response.status >= 400) {
       if (!response.ok) {
@@ -166,7 +175,15 @@ function getPlaceQuery(url: URL): string | null {
     return null
   }
 
-  return decodeURIComponent(placePart.replace(/\+/g, " "))
+  const spacedPlacePart = placePart.replace(/\+/g, " ")
+
+  try {
+    return decodeURIComponent(spacedPlacePart)
+  } catch {
+    // Malformed percent-escapes are passed through by `new URL()`; fall back
+    // to the raw path segment instead of failing the whole request.
+    return spacedPlacePart
+  }
 }
 
 function getPlaceSearchLocationBias(url: URL): PlaceSearchLocationBias | null {
@@ -197,7 +214,9 @@ function getPlaceUrlFallback(
   query: string,
   locationBias: PlaceSearchLocationBias | null,
 ): ResolvedGooglePlace | null {
-  if (!locationBias) {
+  // A place_id query carries no human-readable name, so there is nothing
+  // sensible to fall back to.
+  if (!locationBias || query.startsWith("place_id:")) {
     return null
   }
 
@@ -238,6 +257,7 @@ async function requestGooglePlaces(
     try {
       searchResponse = await fetch("https://places.googleapis.com/v1/places:searchText", {
         method: "POST",
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         headers: {
           "Content-Type": "application/json",
           "X-Goog-Api-Key": apiKey,
@@ -319,6 +339,7 @@ async function requestGooglePlaces(
         .map((part) => encodeURIComponent(part))
         .join("/")}`,
       {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         headers: {
           "X-Goog-Api-Key": apiKey,
           "X-Goog-FieldMask": placeDetailsFieldMask,
@@ -400,7 +421,7 @@ async function requestGooglePlaces(
         }
       : null,
     photos:
-      result.data.places[0].photos?.map((photo) => ({
+      result.data.places[0].photos?.slice(0, 10).map((photo) => ({
         name: photo.name,
         widthPx: photo.widthPx ?? null,
         heightPx: photo.heightPx ?? null,
@@ -420,9 +441,25 @@ export function createGooglePlacesResolver(
     }
 
     const cacheKey = googleMapsUrl.trim()
+    const now = Date.now()
     const cached = cache.get(cacheKey)
-    if (cached && cached.expiresAt > Date.now()) {
+    if (cached && cached.expiresAt > now) {
       return cached.place
+    }
+
+    // The key is user-supplied, so sweep expired entries and cap the size to
+    // keep memory bounded.
+    for (const [key, entry] of cache) {
+      if (entry.expiresAt <= now) {
+        cache.delete(key)
+      }
+    }
+    while (cache.size >= PLACE_DETAILS_CACHE_MAX_ENTRIES) {
+      const oldestKey = cache.keys().next().value
+      if (oldestKey === undefined) {
+        break
+      }
+      cache.delete(oldestKey)
     }
 
     const inputUrl = parseAllowedGoogleUrl(googleMapsUrl)
@@ -672,6 +709,7 @@ async function fetchUncachedSuggestionResults(
   try {
     response = await fetch("https://places.googleapis.com/v1/places:searchText", {
       method: "POST",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       headers: {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": apiKey,
@@ -840,6 +878,7 @@ export function createGooglePlacesPhotoResolver(
     try {
       response = await fetch(
         `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=1200&key=${encodeURIComponent(apiKey)}`,
+        { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
       )
     } catch {
       throw new GooglePlacesError("Could not load Google place photo", 503)

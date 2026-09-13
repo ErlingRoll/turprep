@@ -143,7 +143,7 @@ export function TripForm({ accessToken, onCreated, onCancel }: TripFormProps) {
                 setEndDate(maximumEndDate)
               }
             }}
-            maxDate={endDate ? shiftDate(endDate, -59) : undefined}
+            minDate={endDate ? shiftDate(endDate, -59) : undefined}
             value={startDate}
           />
           <DatePicker

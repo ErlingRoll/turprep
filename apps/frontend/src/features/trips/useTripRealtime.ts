@@ -48,6 +48,10 @@ export function useTripRealtime({
     const client = getSupabaseClient()
     const channel = client.channel(`trip-updates:${tripId}`)
     let refreshTimer: number | null = null
+    let isActive = true
+    // Only the most recent fetch may apply; an older response that resolves
+    // after a newer one would otherwise overwrite fresher trip state.
+    let latestRequestId = 0
 
     const refreshTrip = () => {
       if (isPausedRef.current()) {
@@ -55,8 +59,14 @@ export function useTripRealtime({
         return
       }
 
+      const requestId = ++latestRequestId
+
       void getTrip(accessToken, tripId)
         .then((nextTrip) => {
+          if (!isActive || requestId !== latestRequestId) {
+            return
+          }
+
           if (isPausedRef.current()) {
             refreshTimer = window.setTimeout(refreshTrip, 300)
             return
@@ -65,7 +75,9 @@ export function useTripRealtime({
           onTripUpdatedRef.current(nextTrip)
         })
         .catch((reason: unknown) => {
-          onErrorRef.current(getErrorMessage(reason))
+          if (isActive && requestId === latestRequestId) {
+            onErrorRef.current(getErrorMessage(reason))
+          }
         })
     }
 
@@ -107,6 +119,7 @@ export function useTripRealtime({
     })
 
     return () => {
+      isActive = false
       if (refreshTimer !== null) {
         window.clearTimeout(refreshTimer)
       }
