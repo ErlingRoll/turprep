@@ -16,6 +16,7 @@ import { useTripRealtime } from "./useTripRealtime"
 import { useTripDaySelection } from "./useTripDaySelection"
 import { DesktopTripNavbar } from "./DesktopTripNavbar"
 import { useTripPresence } from "./useTripPresence"
+import { BuildInfoFooter } from "../../components/BuildInfoFooter"
 import { LanguageSwitcher } from "../../components/LanguageSwitcher"
 import { MobileMenuButton } from "../../components/MobileMenuButton"
 import { ThemeToggle } from "../../components/ThemeToggle"
@@ -481,6 +482,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
           </section>
         </section>
       )}
+      <BuildInfoFooter />
     </main>
   )
 }

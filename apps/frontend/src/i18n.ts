@@ -27,6 +27,11 @@ const resources = {
         saving: "Lagrer ...",
         to: "Til",
       },
+      footer: {
+        built: "Bygget",
+        commit: "Commit",
+        version: "v{{version}}",
+      },
       auth: {
         checkEmail: "Sjekk e-posten din for å bekrefte kontoen før du logger inn.",
         confirmPassword: "Bekreft passord",
@@ -800,6 +805,11 @@ const resources = {
         save: "Save",
         saving: "Saving ...",
         to: "To",
+      },
+      footer: {
+        built: "Built",
+        commit: "Commit",
+        version: "v{{version}}",
       },
       auth: {
         checkEmail: "Check your email to confirm the account before signing in.",

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { getTripAccessStatus, requestTripAccess, type TripAccessStatus } from "../../api"
+import { BuildInfoFooter } from "../../components/BuildInfoFooter"
 import { getErrorMessage } from "../../lib/errors"
 
 type TripAccessRequestScreenProps = {
@@ -118,7 +119,7 @@ export function TripAccessRequestScreen({ accessToken }: TripAccessRequestScreen
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-page px-5">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-page px-5">
       <section className="w-full max-w-md rounded-2xl border border-border bg-surface p-6 shadow-card">
         <h1 className="text-2xl font-semibold text-brand">{t("tripAccess.title")}</h1>
         <p className="mt-2 text-sm text-muted">
@@ -151,6 +152,7 @@ export function TripAccessRequestScreen({ accessToken }: TripAccessRequestScreen
           )}
         </div>
       </section>
+      <BuildInfoFooter />
     </main>
   )
 }

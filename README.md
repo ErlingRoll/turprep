@@ -101,6 +101,20 @@ Shared models belong in `packages/models/src`. Define each model's Zod schema th
 - Apply the trip-sharing migration before using invitations, access links, or
   Realtime trip updates.
 
+## Build information footer
+
+The frontend shows a footer with the app version, commit hash, and build time.
+These values are injected at build time by `apps/frontend/vite.config.ts`:
+
+- Version comes from the `version` field in `apps/frontend/package.json`.
+- Commit hash comes from `COMMIT_REF` (set automatically by Netlify) or
+  `VITE_COMMIT_SHA`, falling back to `git rev-parse --short HEAD`, then
+  `unknown` when no git history is available.
+- Build time is the UTC timestamp of the build, formatted in the viewer's
+  locale.
+
+Bump the `version` in `apps/frontend/package.json` when releasing.
+
 ## Production deployment
 
 Configure the frontend deployment with the `turprep.com` custom domain and set

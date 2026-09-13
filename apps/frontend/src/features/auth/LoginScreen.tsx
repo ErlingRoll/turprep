@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { getSupabaseClient, setSessionPersistencePreference } from "../../lib/supabase"
 import { getErrorMessage } from "../../lib/errors"
+import { BuildInfoFooter } from "../../components/BuildInfoFooter"
 import { LanguageSwitcher } from "../../components/LanguageSwitcher"
 import { MobileMenuButton } from "../../components/MobileMenuButton"
 import { ThemeToggle } from "../../components/ThemeToggle"
@@ -106,7 +107,7 @@ export function LoginScreen() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-page px-5 py-10 text-ink">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-page px-5 py-10 text-ink">
       <section className="w-full max-w-md rounded-[2rem] border border-border-card bg-surface p-7 shadow-card sm:p-10 lg:min-w-[42rem]">
         <div className="mb-8 font-semibold tracking-tight text-brand sm:mb-12">
           <div className="flex items-center justify-between gap-3">
@@ -265,6 +266,7 @@ export function LoginScreen() {
           <span>{t("auth.rememberMe")}</span>
         </label>
       </section>
+      <BuildInfoFooter />
     </main>
   )
 }
