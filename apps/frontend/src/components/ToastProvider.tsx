@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { getErrorMessage } from "../lib/errors"
 import { subscribeToHttpErrors } from "../lib/http-errors"
-import { ToastContext, type Toast, type ToastContextValue } from "./ToastContext"
+import {
+  ToastContext,
+  type Toast,
+  type ToastContextValue,
+  type ToastTone,
+} from "./ToastContext"
 import { ToastContainer } from "./ToastContainer"
 
 let nextToastId = 0
@@ -17,13 +22,10 @@ export function ToastProvider({ children }: ToastProviderProps) {
     setToasts((currentToasts) => currentToasts.filter((toast) => toast.id !== id))
   }, [])
 
-  const addToast = useCallback(
-    (message: string) => {
-      const id = `toast-${++nextToastId}`
-      setToasts((currentToasts) => [...currentToasts, { id, message, tone: "error" }])
-    },
-    [],
-  )
+  const addToast = useCallback((message: string, tone: ToastTone = "error") => {
+    const id = `toast-${++nextToastId}`
+    setToasts((currentToasts) => [...currentToasts, { id, message, tone }])
+  }, [])
 
   useEffect(
     () =>

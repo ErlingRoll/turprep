@@ -13,6 +13,8 @@ import {
   CreateTripInputSchema,
   GooglePlaceDetailsInputSchema,
   GooglePlaceDetailsSchema,
+  GooglePlaceSearchInputSchema,
+  GooglePlaceSearchResponseSchema,
   GooglePlaceSuggestionsInputSchema,
   GooglePlaceSuggestionsSchema,
   InviteTripMemberInputSchema,
@@ -57,10 +59,12 @@ import {
 import {
   createGooglePlacesResolver,
   createGooglePlacesPhotoResolver,
+  createGooglePlacesSearchResolver,
   createGooglePlacesSuggestionsResolver,
   GooglePlacesError,
   type GooglePlacesPhotoResolver,
   type GooglePlacesResolver,
+  type GooglePlacesSearchResolver,
   type GooglePlacesSuggestionsResolver,
 } from "./google-places.js"
 import {
@@ -80,6 +84,7 @@ export type AppDependencies = {
   tripRepository?: TripRepository
   googlePlacesResolver?: GooglePlacesResolver
   googlePlacesPhotoResolver?: GooglePlacesPhotoResolver
+  googlePlacesSearchResolver?: GooglePlacesSearchResolver
   googlePlacesSuggestionsResolver?: GooglePlacesSuggestionsResolver
   sharingEmailSender?: SharingEmailSender
 }
@@ -182,6 +187,8 @@ export function createApp(dependencies: AppDependencies = {}) {
   const googlePlacesResolver = dependencies.googlePlacesResolver ?? createGooglePlacesResolver()
   const googlePlacesPhotoResolver =
     dependencies.googlePlacesPhotoResolver ?? createGooglePlacesPhotoResolver()
+  const googlePlacesSearchResolver =
+    dependencies.googlePlacesSearchResolver ?? createGooglePlacesSearchResolver()
   const googlePlacesSuggestionsResolver =
     dependencies.googlePlacesSuggestionsResolver ?? createGooglePlacesSuggestionsResolver()
   const sharingEmailSender = dependencies.sharingEmailSender ?? createSharingEmailSender()
@@ -241,6 +248,33 @@ export function createApp(dependencies: AppDependencies = {}) {
 
         const photo = await googlePlacesPhotoResolver(photoName)
         response.type(photo.contentType).send(photo.body)
+      } catch (error) {
+        if (error instanceof GooglePlacesError) {
+          response.status(error.statusCode).json({ message: error.message })
+          return
+        }
+        next(error)
+      }
+    },
+  )
+
+  app.post(
+    "/api/google-places/search",
+    (request, response, next) => requireAuthenticatedUser(authService, request, response, next),
+    async (request: Request, response: Response, next: NextFunction) => {
+      try {
+        const parsedInput = GooglePlaceSearchInputSchema.safeParse(request.body)
+
+        if (!parsedInput.success) {
+          response.status(400).json({
+            message: "Invalid place search",
+            issues: parsedInput.error.issues,
+          })
+          return
+        }
+
+        const place = await googlePlacesSearchResolver(parsedInput.data)
+        response.json(GooglePlaceSearchResponseSchema.parse({ place }))
       } catch (error) {
         if (error instanceof GooglePlacesError) {
           response.status(error.statusCode).json({ message: error.message })

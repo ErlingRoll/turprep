@@ -38,3 +38,29 @@ export type GooglePlaceDetails = z.infer<typeof GooglePlaceDetailsSchema>
 export type GooglePlacePhoto = z.infer<typeof GooglePlacePhotoSchema>
 export type GooglePlaceOpeningHours = z.infer<typeof GooglePlaceOpeningHoursSchema>
 export type GooglePlaceDetailsInput = z.infer<typeof GooglePlaceDetailsInputSchema>
+
+/**
+ * Free-text place lookup used by the map search box. The optional coordinates
+ * bias the search towards the part of the world the user is currently looking
+ * at, so a partial name like "central station" resolves near the trip.
+ */
+export const GooglePlaceSearchInputSchema = z.object({
+  query: z.string().trim().min(1).max(200),
+  latitude: z.number().min(-90).max(90).nullable().default(null),
+  longitude: z.number().min(-180).max(180).nullable().default(null),
+})
+
+/** A search hit always has coordinates, because it has to be placed on the map. */
+export const GooglePlaceSearchResultSchema = GooglePlaceDetailsSchema.extend({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  googleMapsUrl: z.string().url(),
+})
+
+export const GooglePlaceSearchResponseSchema = z.object({
+  place: GooglePlaceSearchResultSchema.nullable(),
+})
+
+export type GooglePlaceSearchInput = z.infer<typeof GooglePlaceSearchInputSchema>
+export type GooglePlaceSearchResult = z.infer<typeof GooglePlaceSearchResultSchema>
+export type GooglePlaceSearchResponse = z.infer<typeof GooglePlaceSearchResponseSchema>

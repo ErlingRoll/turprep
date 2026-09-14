@@ -1,9 +1,12 @@
 import { z } from "zod"
 import {
   GooglePlaceDetailsSchema,
+  GooglePlaceSearchResultSchema,
   GooglePlaceSuggestionsSchema,
   isAllowedGoogleMapsUrl,
   type GooglePlaceDetails,
+  type GooglePlaceSearchInput,
+  type GooglePlaceSearchResult,
   type GooglePlaceSuggestion,
   type GooglePlaceSuggestionsInput,
 } from "@turprep/models"
@@ -239,6 +242,45 @@ function getPlaceUrlFallback(
   }
 }
 
+type PlaceDetailsResult = z.infer<typeof placeDetailsSchema>
+
+/** Maps one Places API result onto the shared API model. */
+function toResolvedGooglePlace(
+  place: PlaceDetailsResult,
+  fallbackAddress: string,
+  fallbackLocation: { latitude: number; longitude: number } | null,
+): ResolvedGooglePlace {
+  const openingHours = place.currentOpeningHours ?? place.regularOpeningHours
+
+  return {
+    placeId: place.id ?? null,
+    name: place.displayName.text,
+    address: place.formattedAddress ?? fallbackAddress,
+    latitude: place.location?.latitude ?? fallbackLocation?.latitude ?? null,
+    longitude: place.location?.longitude ?? fallbackLocation?.longitude ?? null,
+    category: place.primaryTypeDisplayName?.text ?? null,
+    businessStatus: place.businessStatus ?? null,
+    priceLevel: place.priceLevel ?? null,
+    summary: place.editorialSummary?.text ?? null,
+    phoneNumber: place.nationalPhoneNumber ?? null,
+    websiteUrl: place.websiteUri ?? null,
+    rating: place.rating ?? null,
+    userRatingCount: place.userRatingCount ?? null,
+    openingHours: openingHours
+      ? {
+          openNow: openingHours.openNow ?? null,
+          weekdayDescriptions: openingHours.weekdayDescriptions,
+        }
+      : null,
+    photos:
+      place.photos?.slice(0, 10).map((photo) => ({
+        name: photo.name,
+        widthPx: photo.widthPx ?? null,
+        heightPx: photo.heightPx ?? null,
+      })) ?? [],
+  }
+}
+
 async function requestGooglePlaces(
   apiKey: string,
   query: string,
@@ -391,42 +433,7 @@ async function requestGooglePlaces(
     throw new GooglePlacesError("No place found for Google Maps link")
   }
 
-  return {
-    placeId: result.data.places[0].id ?? null,
-    name: result.data.places[0].displayName.text,
-    address: result.data.places[0].formattedAddress ?? query,
-    latitude: result.data.places[0].location?.latitude ?? locationBias?.latitude ?? null,
-    longitude: result.data.places[0].location?.longitude ?? locationBias?.longitude ?? null,
-    category: result.data.places[0].primaryTypeDisplayName?.text ?? null,
-    businessStatus: result.data.places[0].businessStatus ?? null,
-    priceLevel: result.data.places[0].priceLevel ?? null,
-    summary: result.data.places[0].editorialSummary?.text ?? null,
-    phoneNumber: result.data.places[0].nationalPhoneNumber ?? null,
-    websiteUrl: result.data.places[0].websiteUri ?? null,
-    rating: result.data.places[0].rating ?? null,
-    userRatingCount: result.data.places[0].userRatingCount ?? null,
-    openingHours: (
-      result.data.places[0].currentOpeningHours ?? result.data.places[0].regularOpeningHours
-    )
-      ? {
-          openNow:
-            (
-              result.data.places[0].currentOpeningHours ??
-              result.data.places[0].regularOpeningHours
-            )?.openNow ?? null,
-          weekdayDescriptions: (
-            result.data.places[0].currentOpeningHours ??
-            result.data.places[0].regularOpeningHours
-          )?.weekdayDescriptions ?? [],
-        }
-      : null,
-    photos:
-      result.data.places[0].photos?.slice(0, 10).map((photo) => ({
-        name: photo.name,
-        widthPx: photo.widthPx ?? null,
-        heightPx: photo.heightPx ?? null,
-      })) ?? [],
-  }
+  return toResolvedGooglePlace(result.data.places[0], query, locationBias)
 }
 
 export function createGooglePlacesResolver(
@@ -475,6 +482,104 @@ export function createGooglePlacesResolver(
     )
     cache.set(cacheKey, { expiresAt: Date.now() + cacheDurationMs, place })
     return place
+  }
+}
+
+// ─── Map search ──────────────────────────────────────────────────────────────
+
+export type GooglePlacesSearchResolver = (
+  input: GooglePlaceSearchInput,
+) => Promise<GooglePlaceSearchResult | null>
+
+const PLACE_SEARCH_FIELD_MASK = placeDetailsFieldMask
+  .split(",")
+  .map((field) => `places.${field}`)
+  .join(",")
+
+// Wide enough to cover a city region without pinning the search to the exact
+// map centre, so a partial name still resolves while staying near the trip.
+const PLACE_SEARCH_BIAS_RADIUS_METERS = 50_000
+
+/**
+ * Resolves free-text map search input to the single best matching place.
+ * Returns `null` when the query matches nothing, which callers treat as an
+ * ordinary "no place found" result rather than an error.
+ */
+export function createGooglePlacesSearchResolver(
+  apiKey = process.env.GOOGLE_PLACES_API_KEY,
+): GooglePlacesSearchResolver {
+  return async ({ query, latitude, longitude }) => {
+    if (!apiKey) {
+      throw new GooglePlacesError("Google Places is not configured", 503)
+    }
+
+    const locationBias =
+      latitude !== null && longitude !== null
+        ? {
+            circle: {
+              center: { latitude, longitude },
+              radius: PLACE_SEARCH_BIAS_RADIUS_METERS,
+            },
+          }
+        : null
+
+    let response: Response
+
+    try {
+      response = await fetch("https://places.googleapis.com/v1/places:searchText", {
+        method: "POST",
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": apiKey,
+          "X-Goog-FieldMask": PLACE_SEARCH_FIELD_MASK,
+        },
+        body: JSON.stringify({
+          languageCode: "nb",
+          textQuery: query,
+          maxResultCount: 1,
+          ...(locationBias ? { locationBias } : {}),
+        }),
+      })
+    } catch {
+      throw new GooglePlacesError("Could not search Google Places", 503)
+    }
+
+    if (!response.ok) {
+      throw new GooglePlacesError("Could not search Google Places", 503)
+    }
+
+    let body: unknown
+
+    try {
+      body = await response.json()
+    } catch {
+      throw new GooglePlacesError("Could not search Google Places", 503)
+    }
+
+    const parsed = placeSearchSchema.safeParse(body)
+
+    if (!parsed.success || parsed.data.places.length === 0) {
+      return null
+    }
+
+    const place = toResolvedGooglePlace(parsed.data.places[0], query, null)
+
+    // Without coordinates there is nothing to pin on the map.
+    if (place.latitude === null || place.longitude === null) {
+      return null
+    }
+
+    return GooglePlaceSearchResultSchema.parse({
+      ...place,
+      latitude: place.latitude,
+      longitude: place.longitude,
+      googleMapsUrl: place.placeId
+        ? `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(place.placeId)}`
+        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+            `${place.latitude},${place.longitude}`,
+          )}`,
+    })
   }
 }
 

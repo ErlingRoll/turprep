@@ -3,7 +3,9 @@ import { useTranslation } from "react-i18next"
 import {
   getGooglePlaceDetails,
   getGooglePlacePhoto,
+  searchGooglePlace,
   type GooglePlaceDetails,
+  type GooglePlaceSearchResult,
   type GooglePlaceSuggestion,
 } from "../../api"
 import { formatDate } from "../../lib/date-format"
@@ -11,6 +13,8 @@ import { formatGooglePriceLevel } from "../../lib/google-place-format"
 import { getErrorMessage } from "../../lib/errors"
 import { loadGoogleMaps } from "../../lib/google-maps"
 import { MobileMenuButton } from "../../components/MobileMenuButton"
+import { useToast } from "../../components/ToastContext"
+import { TripMapSearch } from "./TripMapSearch"
 
 export type TripMapMarker = {
   id: string
@@ -20,6 +24,8 @@ export type TripMapMarker = {
   latitude: number
   longitude: number
   googleMapsUrl?: string | null
+  /** Backup ("forslag") entries are drawn outlined so they read as tentative. */
+  isBackup?: boolean
 }
 
 type TripMapProps = {
@@ -27,6 +33,10 @@ type TripMapProps = {
   markers: TripMapMarker[]
   renderMarkerDetails?: (marker: TripMapMarker) => ReactNode
   renderSuggestionDetails?: (suggestion: GooglePlaceSuggestion) => ReactNode
+  renderSearchResultDetails?: (
+    result: GooglePlaceSearchResult,
+    closeSearchResult: () => void,
+  ) => ReactNode
   onMarkerClick?: (marker: TripMapMarker) => void
   onMarkerLocationSave?: (
     marker: TripMapMarker,
@@ -184,9 +194,58 @@ function markerColor(type: TripMapMarker["type"]) {
   return color
 }
 
+function parseHexColor(color: string) {
+  const hex = color.trim().replace(/^#/, "")
+  const expanded =
+    hex.length === 3
+      ? hex
+          .split("")
+          .map((channel) => channel + channel)
+          .join("")
+      : hex
+
+  if (!/^[0-9a-f]{6}$/i.test(expanded)) {
+    return null
+  }
+
+  return [
+    Number.parseInt(expanded.slice(0, 2), 16),
+    Number.parseInt(expanded.slice(2, 4), 16),
+    Number.parseInt(expanded.slice(4, 6), 16),
+  ]
+}
+
+function toHexColor(channels: number[]) {
+  return `#${channels
+    .map((value) => Math.round(value).toString(16).padStart(2, "0"))
+    .join("")}`
+}
+
+/**
+ * Palette for a backup marker. The fill is a tint of the type colour rather
+ * than plain white, so the marker does not disappear into the map's own
+ * near-white background, and the label ink is a darkened version of the same
+ * colour so it stays readable on that tint.
+ */
+function backupMarkerPalette(color: string) {
+  const base = parseHexColor(color)
+  const tintTarget = parseHexColor("#faf8f3")
+  const inkTarget = parseHexColor("#1f2937")
+
+  if (!base || !tintTarget || !inkTarget) {
+    return { fill: "#faf8f3", ink: color }
+  }
+
+  const mix = (target: number[], amount: number) =>
+    toHexColor(base.map((value, index) => value + (target[index] - value) * amount))
+
+  // A 45% tint stays clearly lighter than a planned marker while still reading
+  // as a colour rather than as part of the map's near-white background.
+  return { fill: mix(tintTarget, 0.45), ink: mix(inkTarget, 0.6) }
+}
+
 function markerIcon(marker: TripMapMarker): google.maps.Icon {
   const label = getMarkerLabel(marker.title)
-  const width = Math.max(56, Math.min(190, label.length * 7 + 24))
   const encodedLabel = label
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -194,12 +253,31 @@ function markerIcon(marker: TripMapMarker): google.maps.Icon {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&apos;")
   const color = markerColor(marker.type)
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="42" viewBox="0 0 ${width} 42"><rect x="1" y="1" width="${width - 2}" height="29" rx="15" fill="${color}" stroke="#faf8f3" stroke-width="2"/><path d="M${width / 2 - 8} 29h16l-8 12z" fill="${color}" stroke="#faf8f3" stroke-width="2" stroke-linejoin="round"/><text x="${width / 2}" y="20" fill="#faf8f3" font-family="Arial,sans-serif" font-size="11" font-weight="700" text-anchor="middle">${encodedLabel}</text></svg>`
+
+  // A planned entry is a solid pill in the type colour. A backup entry keeps
+  // the type colour but is drawn as a dashed, tinted outline carrying a solid
+  // accent dot, so both its status and its type read at a glance.
+  if (marker.isBackup) {
+    const width = Math.max(70, Math.min(200, label.length * 7 + 40))
+    const tipX = width / 2
+    const { fill, ink } = backupMarkerPalette(color)
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="42" viewBox="0 0 ${width} 42"><rect x="1" y="1" width="${width - 2}" height="29" rx="15" fill="${fill}" stroke="${color}" stroke-width="2" stroke-dasharray="5 3"/><path d="M${tipX - 8} 28h16l-8 13z" fill="${fill}"/><path d="M${tipX - 8} 28L${tipX} 41L${tipX + 8} 28" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="15" cy="15.5" r="4.5" fill="${color}"/><text x="${(width + 16) / 2}" y="20" fill="${ink}" font-family="Arial,sans-serif" font-size="11" font-weight="700" text-anchor="middle">${encodedLabel}</text></svg>`
+
+    return {
+      url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+      scaledSize: new google.maps.Size(width, 42),
+      anchor: new google.maps.Point(tipX, 42),
+    }
+  }
+
+  const width = Math.max(56, Math.min(190, label.length * 7 + 24))
+  const tipX = width / 2
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="42" viewBox="0 0 ${width} 42"><rect x="1" y="1" width="${width - 2}" height="29" rx="15" fill="${color}" stroke="#faf8f3" stroke-width="2"/><path d="M${tipX - 8} 29h16l-8 12z" fill="${color}" stroke="#faf8f3" stroke-width="2" stroke-linejoin="round"/><text x="${tipX}" y="20" fill="#faf8f3" font-family="Arial,sans-serif" font-size="11" font-weight="700" text-anchor="middle">${encodedLabel}</text></svg>`
 
   return {
     url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
     scaledSize: new google.maps.Size(width, 42),
-    anchor: new google.maps.Point(width / 2, 42),
+    anchor: new google.maps.Point(tipX, 42),
   }
 }
 
@@ -231,6 +309,27 @@ function suggestionMarkerIcon(
     url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
     scaledSize: new google.maps.Size(width, 48),
     anchor: new google.maps.Point(8, 48),
+  }
+}
+
+/** Temporary pin for a map search hit; deliberately unlike the trip marker colors. */
+function searchResultMarkerIcon(name: string): google.maps.Icon {
+  const label = getMarkerLabel(name)
+  const width = Math.max(96, Math.min(220, label.length * 7 + 52))
+  const encodedLabel = label
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;")
+  const color = "#1f2937"
+  const textX = (34 + width - 2) / 2
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="42" viewBox="0 0 ${width} 42"><rect x="1" y="1" width="${width - 2}" height="29" rx="15" fill="${color}" stroke="#faf8f3" stroke-width="2"/><path d="M${width / 2 - 8} 29h16l-8 12z" fill="${color}" stroke="#faf8f3" stroke-width="2" stroke-linejoin="round"/><circle cx="19" cy="14" r="5.5" fill="none" stroke="#faf8f3" stroke-width="2"/><path d="M23 18l4 4" stroke="#faf8f3" stroke-width="2" stroke-linecap="round"/><text x="${textX}" y="20" fill="#faf8f3" font-family="Arial,sans-serif" font-size="11" font-weight="700" text-anchor="middle">${encodedLabel}</text></svg>`
+
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: new google.maps.Size(width, 42),
+    anchor: new google.maps.Point(width / 2, 42),
   }
 }
 
@@ -267,6 +366,7 @@ export function TripMap({
   markers,
   renderMarkerDetails,
   renderSuggestionDetails,
+  renderSearchResultDetails,
   onMarkerClick,
   onMarkerLocationSave,
   focusMarker,
@@ -284,7 +384,10 @@ export function TripMap({
   suggestionPin = null,
 }: TripMapProps) {
   const { t } = useTranslation()
+  const { addToast } = useToast()
   const [isMobileOpen, setIsMobileOpen] = useState(false)
+  const [searchResult, setSearchResult] = useState<GooglePlaceSearchResult | null>(null)
+  const [isSearching, setIsSearching] = useState(false)
   const [selectedMarker, setSelectedMarker] = useState<TripMapMarker | null>(null)
   const [activeSuggestion, setActiveSuggestion] = useState<GooglePlaceSuggestion | null>(
     selectedSuggestion,
@@ -308,7 +411,9 @@ export function TripMap({
   const [mapLoadError, setMapLoadError] = useState<string | null>(null)
   const [isMapReady, setIsMapReady] = useState(false)
   const hasDesktopDetailsPanel = Boolean(
-    (selectedMarker && renderMarkerDetails) || (activeSuggestion && renderSuggestionDetails),
+    (selectedMarker && renderMarkerDetails) ||
+      (activeSuggestion && renderSuggestionDetails) ||
+      searchResult,
   )
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<google.maps.Map | null>(null)
@@ -317,6 +422,7 @@ export function TripMap({
   const hasFittedMarkerViewportRef = useRef(false)
   const markerDetailsCloseTimeoutRef = useRef<number | null>(null)
   const suggestionPinRef = useRef<MapMarker | null>(null)
+  const searchMarkerRef = useRef<MapMarker | null>(null)
   const suggestionMarkerRefs = useRef<Map<string, MapMarker>>(new Map())
   const renderMarkerDetailsRef = useRef(renderMarkerDetails)
   const onMarkerClickRef = useRef(onMarkerClick)
@@ -387,6 +493,10 @@ export function TripMap({
         detachMarker(suggestionPinRef.current)
       }
       suggestionPinRef.current = null
+      if (searchMarkerRef.current) {
+        detachMarker(searchMarkerRef.current)
+      }
+      searchMarkerRef.current = null
       mapRef.current = null
       hasFittedMarkerViewportRef.current = false
       setIsMapReady(false)
@@ -422,6 +532,7 @@ export function TripMap({
           if (window.innerWidth >= 1024) {
             onMarkerClickRef.current?.(marker)
             setActiveSuggestion(null)
+            setSearchResult(null)
             if (renderMarkerDetailsRef.current) {
               setSelectedMarker(marker)
             }
@@ -438,6 +549,7 @@ export function TripMap({
           }
           setIsMarkerDetailsClosing(false)
           setActiveSuggestion(null)
+          setSearchResult(null)
           setSelectedMarker(marker)
         },
         onDragEnd: () => {
@@ -532,6 +644,7 @@ export function TripMap({
           map,
           onClick: () => {
             setSelectedMarker(null)
+            setSearchResult(null)
             setActiveSuggestion(suggestion)
             onSuggestionMarkerClickRef.current?.(suggestion)
           },
@@ -613,6 +726,38 @@ export function TripMap({
 
   useEffect(() => {
     const map = mapRef.current
+    if (!map || !isMapReady) {
+      return
+    }
+
+    if (searchMarkerRef.current) {
+      detachMarker(searchMarkerRef.current)
+      searchMarkerRef.current = null
+    }
+
+    if (!searchResult) {
+      return
+    }
+
+    const position = { lat: searchResult.latitude, lng: searchResult.longitude }
+    searchMarkerRef.current = createMapMarker({
+      icon: searchResultMarkerIcon(searchResult.name),
+      map,
+      position,
+      title: searchResult.name,
+      zIndex: markerZIndex + 4,
+    })
+
+    if (prefersReducedMotion()) {
+      map.setCenter(position)
+    } else {
+      map.panTo(position)
+    }
+    map.setZoom(15)
+  }, [isMapReady, searchResult])
+
+  useEffect(() => {
+    const map = mapRef.current
     if (!map || !isMapReady || !onMapClick) {
       return
     }
@@ -673,6 +818,11 @@ export function TripMap({
     setIsLoadingGooglePlace(false)
 
     if (!googleMapsUrl) {
+      // A search hit already carries its full place details, so there is
+      // nothing more to fetch.
+      if (searchResult) {
+        setGooglePlaceDetails(searchResult)
+      }
       return
     }
 
@@ -697,7 +847,7 @@ export function TripMap({
     return () => {
       isCancelled = true
     }
-  }, [accessToken, activeSuggestion?.googleMapsUrl, selectedMarker?.googleMapsUrl])
+  }, [accessToken, activeSuggestion?.googleMapsUrl, searchResult, selectedMarker?.googleMapsUrl])
 
   useEffect(() => {
     let isCancelled = false
@@ -804,13 +954,63 @@ export function TripMap({
     markerDetailsCloseTimeoutRef.current = window.setTimeout(() => {
       setSelectedMarker(null)
       setActiveSuggestion(null)
+      setSearchResult(null)
       setIsMarkerDetailsClosing(false)
       markerDetailsCloseTimeoutRef.current = null
     }, markerDetailsAnimationDuration)
   }
 
+  function handlePlaceSearch(query: string) {
+    const center = mapRef.current?.getCenter()?.toJSON() ?? null
+    // Bias the lookup towards what the user is currently looking at, so a
+    // partial name resolves near the trip instead of anywhere in the world.
+    const hasUsableCenter =
+      center !== null && Math.abs(center.lat) <= 90 && Math.abs(center.lng) <= 180
+
+    setIsSearching(true)
+    void searchGooglePlace(accessToken, {
+      query,
+      latitude: hasUsableCenter ? center.lat : null,
+      longitude: hasUsableCenter ? center.lng : null,
+    })
+      .then((place) => {
+        if (!place) {
+          addToast(t("tripMap.searchNoResults", { query }), "info")
+          return
+        }
+
+        if (markerDetailsCloseTimeoutRef.current !== null) {
+          window.clearTimeout(markerDetailsCloseTimeoutRef.current)
+          markerDetailsCloseTimeoutRef.current = null
+        }
+        setIsMarkerDetailsClosing(false)
+        setSelectedMarker(null)
+        setActiveSuggestion(null)
+        setSearchResult(place)
+      })
+      .catch((reason: unknown) => {
+        addToast(getErrorMessage(reason))
+      })
+      .finally(() => {
+        setIsSearching(false)
+      })
+  }
+
+  function renderDefaultSearchResultDetails(result: GooglePlaceSearchResult) {
+    return (
+      <article className="rounded-2xl bg-surface/95 p-4 shadow-card backdrop-blur-sm">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+          {t("tripMap.searchResult")}
+        </p>
+        <h2 className="mt-1 text-lg font-semibold text-brand">{result.name}</h2>
+        <p className="mt-1 text-sm text-muted">{result.address}</p>
+      </article>
+    )
+  }
+
   function renderGooglePlaceDetails() {
-    const googleMapsUrl = selectedMarker?.googleMapsUrl ?? activeSuggestion?.googleMapsUrl
+    const googleMapsUrl =
+      selectedMarker?.googleMapsUrl ?? activeSuggestion?.googleMapsUrl ?? searchResult?.googleMapsUrl
 
     if (!googleMapsUrl) {
       return null
@@ -956,6 +1156,12 @@ export function TripMap({
           <span className="size-2.5 rounded-full bg-type-housing" />
           {t("tripMap.housing")}
         </span>
+        {markers.some((marker) => marker.isBackup) && (
+          <span className="flex items-center gap-2">
+            <span className="size-2.5 rounded-full border-2 border-dashed border-muted" />
+            {t("tripMap.backupItem")}
+          </span>
+        )}
       </>
     )
   }
@@ -1042,8 +1248,8 @@ export function TripMap({
         <div
           className={
             fullScreen
-              ? `absolute top-3 z-20 flex max-w-[calc(100%-1.5rem)] flex-col gap-1.5 rounded-xl bg-surface/95 p-4 shadow-card backdrop-blur-sm transition-[left] duration-200 ${
-                  hasDesktopDetailsPanel ? "left-[18.75rem]" : "left-3"
+              ? `absolute top-3 z-20 flex max-w-[calc(100%-1.5rem)] flex-col gap-1.5 rounded-xl bg-surface/95 p-4 shadow-card backdrop-blur-sm transition-[left] duration-200 lg:min-w-[30rem] ${
+                  hasDesktopDetailsPanel ? "left-[20.75rem]" : "left-3"
                 }`
               : "hidden shrink-0 items-center justify-between gap-3 px-1 lg:flex"
           }
@@ -1107,6 +1313,15 @@ export function TripMap({
             </div>
           </div>
           {fullScreen && (
+            <TripMapSearch
+              className="border-t border-border-divider pt-2"
+              hasResult={Boolean(searchResult)}
+              isSearching={isSearching}
+              onClear={() => setSearchResult(null)}
+              onSearch={handlePlaceSearch}
+            />
+          )}
+          {fullScreen && (
             <div className="flex flex-wrap items-center gap-3 border-t border-border-divider pt-1 text-xs text-muted">
               {renderLegend()}
             </div>
@@ -1117,11 +1332,11 @@ export function TripMap({
             aria-hidden={!hasDesktopDetailsPanel}
             className={`hidden shrink-0 flex-col overflow-hidden border-border-divider transition-[width,opacity] duration-200 lg:flex ${
               hasDesktopDetailsPanel
-                ? "lg:w-72 lg:border-r lg:opacity-100"
+                ? "lg:w-80 lg:border-r lg:opacity-100"
                 : "pointer-events-none lg:w-0 lg:border-r-0 lg:opacity-0"
             }`}
           >
-            <div className="flex w-72 min-w-72 flex-1 flex-col gap-3 overflow-y-auto p-3">
+            <div className="flex w-80 min-w-80 flex-1 flex-col gap-3 overflow-y-auto p-3">
               {hasDesktopDetailsPanel && (
                 <>
                   <div className="flex shrink-0 items-center justify-between gap-3">
@@ -1140,7 +1355,12 @@ export function TripMap({
                       ? renderMarkerDetails(selectedMarker)
                       : activeSuggestion && renderSuggestionDetails
                         ? renderSuggestionDetails(activeSuggestion)
-                        : null}
+                        : searchResult
+                          ? (renderSearchResultDetails ?? renderDefaultSearchResultDetails)(
+                              searchResult,
+                              () => setSearchResult(null),
+                            )
+                          : null}
                   </div>
                   {renderGooglePlaceDetails()}
                 </>
@@ -1162,7 +1382,7 @@ export function TripMap({
               <div
                 className={`absolute z-10 max-w-64 rounded-lg bg-surface/95 px-3 py-2 text-xs text-on-surface shadow-card transition-[left] duration-200 ${
                   fullScreen
-                    ? `top-32 ${hasDesktopDetailsPanel ? "left-[18.75rem]" : "left-3"}`
+                    ? `top-32 ${hasDesktopDetailsPanel ? "left-[20.75rem]" : "left-3"}`
                     : "left-3 top-14"
                 }`}
               >

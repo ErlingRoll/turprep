@@ -42,6 +42,9 @@ export {
   GooglePlaceDetailsSchema,
   GooglePlaceOpeningHoursSchema,
   GooglePlacePhotoSchema,
+  GooglePlaceSearchInputSchema,
+  GooglePlaceSearchResponseSchema,
+  GooglePlaceSearchResultSchema,
 } from "./google-place.js"
 export {
   GooglePlaceSuggestionSchema,
@@ -113,6 +116,9 @@ export type {
   GooglePlaceDetailsInput,
   GooglePlaceOpeningHours,
   GooglePlacePhoto,
+  GooglePlaceSearchInput,
+  GooglePlaceSearchResponse,
+  GooglePlaceSearchResult,
 } from "./google-place.js"
 export type {
   GooglePlaceSuggestion,

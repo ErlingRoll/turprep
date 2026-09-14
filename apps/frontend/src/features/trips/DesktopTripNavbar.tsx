@@ -16,6 +16,7 @@ type DesktopTripNavbarProps = {
   onSignOut: () => void
   presenceViewers: TripPresenceViewer[]
   tripId: string | undefined
+  tripName: string | undefined
 }
 
 export function DesktopTripNavbar({
@@ -27,6 +28,7 @@ export function DesktopTripNavbar({
   onSignOut,
   presenceViewers,
   tripId,
+  tripName,
 }: DesktopTripNavbarProps) {
   const { t } = useTranslation()
   const tripBasePath = tripId ? `/trips/${tripId}` : null
@@ -39,6 +41,15 @@ export function DesktopTripNavbar({
             <TurprepLogo />
             <span>{PRODUCT_NAME}</span>
           </Link>
+
+          {tripId && tripName && (
+            <span
+              className="min-w-0 shrink truncate border-l border-border pl-5 text-sm font-semibold text-on-surface"
+              title={tripName}
+            >
+              {tripName}
+            </span>
+          )}
 
           {tripId && (
             <TripPresenceIndicator

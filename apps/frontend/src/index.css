@@ -43,10 +43,18 @@
   --color-danger-surface: #fff0e9;
   --color-danger-surface-hover: #fff0e9;
   --color-danger-border: #e7b5a3;
+  --color-info: #2f5a70;
+  --color-info-strong: #2f5a70;
+  --color-info-surface: #f0f7fb;
+  --color-info-surface-hover: #e1eff6;
+  --color-info-border: #a9c9db;
   --color-warning-body: #5f5138;
   --color-warning-surface: #fff7e6;
   --color-success: #52705b;
   --color-success-body: #526057;
+  --color-success-surface: #f1f7f2;
+  --color-success-surface-hover: #e3efe6;
+  --color-success-border: #b3cfba;
   --color-preference-green: #4f8a63;
   --color-preference-yellow: #d09a3d;
   --color-preference-red: #c45b4b;
@@ -133,10 +141,18 @@ button:disabled {
   --color-danger-surface: #3c2926;
   --color-danger-surface-hover: #4a302a;
   --color-danger-border: #75483e;
+  --color-info: #9ec9de;
+  --color-info-strong: #9ec9de;
+  --color-info-surface: #22323a;
+  --color-info-surface-hover: #2b414b;
+  --color-info-border: #456673;
   --color-warning-body: #d4c09b;
   --color-warning-surface: #3a3020;
   --color-success: #a5c6ad;
   --color-success-body: #c1cec3;
+  --color-success-surface: #22322a;
+  --color-success-surface-hover: #2b4034;
+  --color-success-border: #45664f;
   --color-preference-green: #83c694;
   --color-preference-yellow: #dfb65c;
   --color-preference-red: #e27b6b;
@@ -236,7 +252,6 @@ button:disabled {
 
 .toast-dismiss-progress {
   animation: toast-dismiss-progress 7s linear forwards;
-  background: var(--color-error-strong);
   bottom: 0;
   height: 0.25rem;
   left: 0;
@@ -245,7 +260,19 @@ button:disabled {
   transform-origin: left;
 }
 
-.toast-error:hover .toast-dismiss-progress {
+.toast-dismiss-progress-error {
+  background: var(--color-error-strong);
+}
+
+.toast-dismiss-progress-info {
+  background: var(--color-info-strong);
+}
+
+.toast-dismiss-progress-success {
+  background: var(--color-success);
+}
+
+.toast:hover .toast-dismiss-progress {
   animation-play-state: paused;
 }
 

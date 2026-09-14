@@ -7,6 +7,7 @@ export const storageKeys = {
   theme: "turprep-theme",
   legacyTheme: "planleggreise-theme",
   showItemDetails: "turprep-show-item-details",
+  showMapBackupItems: "turprep-show-map-backup-items",
   rememberSession: "turprep.remember-session",
   legacyRememberSession: "planleggreise.remember-session",
   selectedDaysPrefix: "turprep-selected-days-",

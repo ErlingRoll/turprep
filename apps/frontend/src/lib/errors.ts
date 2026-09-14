@@ -61,6 +61,8 @@ const errorTranslations: Record<string, string> = {
   "Could not resolve Google Maps link": "errors.googleMapsResolveFailed",
   "No place found for Google Maps link": "errors.googleMapsPlaceNotFound",
   "Google Places is not configured": "errors.googlePlacesUnavailable",
+  "Could not search Google Places": "errors.googlePlacesSearchFailed",
+  "Invalid place search": "errors.invalidPlaceSearch",
   "Invalid login credentials": "errors.invalidLoginCredentials",
   "Email not confirmed": "errors.emailNotConfirmed",
   "User already registered": "errors.userAlreadyRegistered",
@@ -87,6 +89,7 @@ const googleMapsErrorMessages = new Set([
   "Could not resolve Google Maps link",
   "No place found for Google Maps link",
   "Google Places is not configured",
+  "Could not search Google Places",
 ])
 
 const connectionErrorMessages = new Set([

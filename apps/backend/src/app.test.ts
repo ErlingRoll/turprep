@@ -20,7 +20,12 @@ import type {
 } from "@turprep/models"
 import type { AuthService } from "./auth.js"
 import { createApp } from "./app.js"
-import { createGooglePlacesResolver, type GooglePlacesResolver, type GooglePlacesSuggestionsResolver } from "./google-places.js"
+import {
+  createGooglePlacesResolver,
+  type GooglePlacesResolver,
+  type GooglePlacesSearchResolver,
+  type GooglePlacesSuggestionsResolver,
+} from "./google-places.js"
 import { CurrencyRemovalError, type TripRepository } from "./trip-repository.js"
 
 const testTrip: Trip = {
@@ -128,6 +133,7 @@ function createTestApp(
   tripDetail = testTripDetail,
   repositoryOverrides: Partial<TripRepository> = {},
   googlePlacesSuggestionsResolver?: GooglePlacesSuggestionsResolver,
+  googlePlacesSearchResolver?: GooglePlacesSearchResolver,
 ) {
   const authService: AuthService = {
     authenticate: async (accessToken) =>
@@ -267,6 +273,7 @@ function createTestApp(
     authService,
     tripRepository: { ...tripRepository, ...repositoryOverrides },
     googlePlacesResolver,
+    googlePlacesSearchResolver,
     googlePlacesSuggestionsResolver,
   })
 }
@@ -1436,6 +1443,80 @@ test("suggestions endpoint returns empty array when resolver returns no results"
 
   assert.equal(response.status, 200)
   assert.deepEqual(response.body, [])
+})
+
+// ─── /api/google-places/search ───────────────────────────────────────────────
+
+const mockSearchResult = {
+  placeId: "place-9",
+  name: "Kyoto Station",
+  address: "Kyoto, Japan",
+  latitude: 34.9858,
+  longitude: 135.7588,
+  category: "Train station",
+  businessStatus: null,
+  priceLevel: null,
+  summary: null,
+  phoneNumber: null,
+  websiteUrl: null,
+  rating: null,
+  userRatingCount: null,
+  openingHours: null,
+  photos: [],
+  googleMapsUrl: "https://www.google.com/maps/place/?q=place_id:place-9",
+}
+
+test("place search endpoint requires authentication", async () => {
+  const response = await request(createTestApp())
+    .post("/api/google-places/search")
+    .send({ query: "Kyoto Station" })
+
+  assert.equal(response.status, 401)
+})
+
+test("place search endpoint rejects an empty query", async () => {
+  const response = await request(createTestApp())
+    .post("/api/google-places/search")
+    .set("Authorization", TEST_BEARER_TOKEN)
+    .send({ query: "   " })
+
+  assert.equal(response.status, 400)
+  assert.ok(response.body.issues)
+})
+
+test("place search endpoint returns the best matching place", async () => {
+  const searchResolver: GooglePlacesSearchResolver = async (input) => {
+    assert.equal(input.query, "kyoto stat")
+    assert.equal(input.latitude, 35)
+    assert.equal(input.longitude, 135)
+    return mockSearchResult
+  }
+
+  const response = await request(
+    createTestApp(undefined, testTripDetail, {}, undefined, searchResolver),
+  )
+    .post("/api/google-places/search")
+    .set("Authorization", TEST_BEARER_TOKEN)
+    .send({ query: "  kyoto stat  ", latitude: 35, longitude: 135 })
+
+  assert.equal(response.status, 200)
+  assert.equal(response.body.place.placeId, "place-9")
+  assert.equal(response.body.place.name, "Kyoto Station")
+  assert.equal(response.body.place.latitude, 34.9858)
+})
+
+test("place search endpoint returns a null place when nothing matches", async () => {
+  const searchResolver: GooglePlacesSearchResolver = async () => null
+
+  const response = await request(
+    createTestApp(undefined, testTripDetail, {}, undefined, searchResolver),
+  )
+    .post("/api/google-places/search")
+    .set("Authorization", TEST_BEARER_TOKEN)
+    .send({ query: "nowhere at all" })
+
+  assert.equal(response.status, 200)
+  assert.equal(response.body.place, null)
 })
 
 test("day item reorder rejects timed items in reverse order", async () => {

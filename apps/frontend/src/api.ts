@@ -5,6 +5,8 @@ import {
   CreateMealInputSchema,
   CreateTripInputSchema,
   GooglePlaceDetailsSchema,
+  GooglePlaceSearchInputSchema,
+  GooglePlaceSearchResponseSchema,
   GooglePlaceSuggestionsInputSchema,
   GooglePlaceSuggestionsSchema,
   HousingStaySchema,
@@ -39,6 +41,8 @@ import {
   type CreateHousingStayInput,
   type CreateMealInput,
   type GooglePlaceDetails,
+  type GooglePlaceSearchInput,
+  type GooglePlaceSearchResult,
   type GooglePlaceSuggestionsInput,
   type GooglePlaceSuggestion,
   type CreateTripInput,
@@ -85,6 +89,8 @@ export type {
   CreateHousingStayInput,
   CreateMealInput,
   GooglePlaceDetails,
+  GooglePlaceSearchInput,
+  GooglePlaceSearchResult,
   GooglePlaceSuggestionsInput,
   GooglePlaceSuggestion,
   HousingStay,
@@ -217,6 +223,21 @@ export async function getGooglePlaceSuggestions(
   })
 
   return promise
+}
+
+/** Resolves free-text map search input. Resolves to `null` when nothing matches. */
+export async function searchGooglePlace(
+  accessToken: string,
+  input: GooglePlaceSearchInput,
+): Promise<GooglePlaceSearchResult | null> {
+  const validatedInput = GooglePlaceSearchInputSchema.parse(input)
+
+  return GooglePlaceSearchResponseSchema.parse(
+    await request("/api/google-places/search", accessToken, {
+      body: JSON.stringify(validatedInput),
+      method: "POST",
+    }),
+  ).place
 }
 
 export async function getGooglePlacePhoto(

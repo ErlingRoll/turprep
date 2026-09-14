@@ -262,6 +262,7 @@ export function TripDashboard({ session }: TripDashboardProps) {
         onSignOut={() => void signOut()}
         presenceViewers={presenceViewers}
         tripId={hasValidTripId ? tripId : undefined}
+        tripName={selectedTrip?.name}
       />
       <nav className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5 sm:px-8 lg:hidden">
         <Link className="flex items-center gap-3 font-semibold tracking-tight text-brand" to="/">

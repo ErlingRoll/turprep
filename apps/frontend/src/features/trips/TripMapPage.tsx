@@ -5,9 +5,11 @@ import {
   updateActivity,
   updateHousingStay,
   updateMeal,
+  type GooglePlaceSearchResult,
   type GooglePlaceSuggestion,
   type TripDetail,
 } from "../../api"
+import { storageKeys } from "../../lib/brand"
 import { formatDate } from "../../lib/date-format"
 import { formatActivityTime, getDayItemTitle } from "../../lib/activity-format"
 import { shiftDate } from "../../lib/trip-dates"
@@ -17,6 +19,7 @@ import {
   replaceMealInTrip,
 } from "./trip-state"
 import { TripMap, type TripMapMarker } from "./TripMap"
+import { TripMapSearchResultDetails } from "./TripMapSearchResultDetails"
 import { TripSuggestionHelper, type SuggestionPin } from "./TripSuggestionHelper"
 import { SuggestionMediaGallery } from "./SuggestionMediaGallery"
 import {
@@ -24,6 +27,10 @@ import {
   getSuggestionSessionState,
   updateSuggestionSessionState,
 } from "./suggestion-session"
+
+function getInitialShowBackupItems() {
+  return window.localStorage.getItem(storageKeys.showMapBackupItems) === "true"
+}
 
 type TripMapPageProps = {
   accessToken: string
@@ -41,7 +48,7 @@ export function TripMapPage({
   const { t } = useTranslation()
   const [searchParams] = useSearchParams()
   const [storedSuggestionSession] = useState(() => getSuggestionSessionState(trip.id))
-  const [showBackupItems, setShowBackupItems] = useState(false)
+  const [showBackupItems, setShowBackupItems] = useState(getInitialShowBackupItems)
   const [isSuggestionOpen, setIsSuggestionOpen] = useState(
     () => storedSuggestionSession?.isSuggestionOpen ?? false,
   )
@@ -57,6 +64,10 @@ export function TripMapPage({
   const [selectedSuggestionPlaceId, setSelectedSuggestionPlaceId] = useState<string | null>(
     () => storedSuggestionSession?.selectedSuggestionPlaceId ?? null,
   )
+
+  useEffect(() => {
+    window.localStorage.setItem(storageKeys.showMapBackupItems, String(showBackupItems))
+  }, [showBackupItems])
 
   useEffect(() => {
     updateSuggestionSessionState(trip.id, {
@@ -148,6 +159,7 @@ export function TripMapPage({
                   title: getDayItemTitle(activity, t("tripDetails.untitledItem")),
                   type: "activity" as const,
                   googleMapsUrl: activity.googleMapsUrl,
+                  isBackup: true,
                 },
               ]
             : [],
@@ -165,6 +177,7 @@ export function TripMapPage({
                   title: getDayItemTitle(meal, t("tripDetails.untitledItem")),
                   type: "meal" as const,
                   googleMapsUrl: meal.googleMapsUrl,
+                  isBackup: true,
                 },
               ]
             : [],
@@ -180,6 +193,7 @@ export function TripMapPage({
                   title: stay.name,
                   type: "housing" as const,
                   googleMapsUrl: stay.googleMapsUrl,
+                  isBackup: true,
                 },
               ]
             : [],
@@ -273,6 +287,11 @@ export function TripMapPage({
     onTripUpdated(replaceHousingStayInTrip(trip, savedHousing))
   }
 
+  function markerTypeLabel(marker: TripMapMarker) {
+    const typeLabel = t(`tripMap.${marker.type}`)
+    return marker.isBackup ? `${typeLabel} · ${t("tripMap.backupItem")}` : typeLabel
+  }
+
   function renderMarkerDetails(marker: TripMapMarker) {
     if (marker.type === "housing") {
       const stay = trip.housingStays.find((currentStay) => currentStay.id === marker.id)
@@ -284,7 +303,7 @@ export function TripMapPage({
       return (
         <article className="rounded-2xl bg-surface/95 p-4 shadow-card backdrop-blur-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-            {t("tripMap.housing")}
+            {markerTypeLabel(marker)}
           </p>
           <h2 className="mt-1 text-lg font-semibold text-brand">{stay.name}</h2>
           <p className="mt-1 text-sm text-muted">
@@ -333,7 +352,7 @@ export function TripMapPage({
     return (
       <div className="rounded-2xl bg-surface/95 p-4 shadow-card backdrop-blur-sm">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-          {marker.type === "activity" ? t("tripMap.activity") : t("tripMap.meal")}
+          {markerTypeLabel(marker)}
         </p>
         <h2 className="mt-1 text-lg font-semibold text-brand">
           {getDayItemTitle(item, t("tripDetails.untitledItem"))}
@@ -370,6 +389,22 @@ export function TripMapPage({
           </a>
         )}
       </div>
+    )
+  }
+
+  function renderSearchResultDetails(
+    result: GooglePlaceSearchResult,
+    closeSearchResult: () => void,
+  ) {
+    return (
+      <TripMapSearchResultDetails
+        accessToken={accessToken}
+        key={result.placeId ?? result.googleMapsUrl}
+        onAdded={closeSearchResult}
+        onTripUpdated={onTripUpdated}
+        result={result}
+        trip={trip}
+      />
     )
   }
 
@@ -440,6 +475,7 @@ export function TripMapPage({
         onSuggestionModeToggle={handleSuggestionModeToggle}
         onSuggestionMarkerClick={handleSuggestionSelect}
         renderMarkerDetails={renderMarkerDetails}
+        renderSearchResultDetails={renderSearchResultDetails}
         renderSuggestionDetails={renderSuggestionDetails}
         suggestionMode={isDroppingSuggestionPin}
         suggestionMarkers={suggestions}
